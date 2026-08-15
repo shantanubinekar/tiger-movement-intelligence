@@ -39,74 +39,56 @@ The central experimental question is:
 
 Everything must be developed in this order:
 
-P0 — MAKE IT WORK
+```mermaid
+flowchart LR
+    P0["P0<br/>Make it work"] --> P1["P1<br/>Make the experiment credible"]
+    P1 --> P2["P2<br/>Add research / robustness features"]
+    P2 --> P3["P3<br/>Beautify & prepare for judging"]
 
-P1 — MAKE THE EXPERIMENT CREDIBLE
+    style P0 fill:#2e7d32,color:#fff,stroke:#1b5e20
+    style P1 fill:#1565c0,color:#fff,stroke:#0d47a1
+    style P2 fill:#8e24aa,color:#fff,stroke:#4a148c
+    style P3 fill:#616161,color:#fff,stroke:#212121
+```
 
-P2 — ADD RESEARCH/ROBUSTNESS FEATURES
+If time becomes limited, **P2 and P3 features are removed first**.
 
-P3 — BEAUTIFY AND PREPARE FOR JUDGING
-
-If time becomes limited, P2 and P3 features are removed first.
-
-P0 must never be sacrificed for advanced features.
+**P0 must never be sacrificed for advanced features.**
 
 ---
 
 # 3. THREE-DEVELOPER ARCHITECTURE
 
-## Developer 1 — FRONTEND + INTEGRATION
+```mermaid
+flowchart TB
+    subgraph D1["Developer 1 — Frontend + Integration"]
+        UI[Streamlit app · UI pages · review queue<br/>evidence panels · movement viz · alerts<br/>evaluation dashboard · final integration]
+    end
 
-Responsible for:
+    subgraph D2["Developer 2 — Backend A: Perception + Identity"]
+        direction LR
+        A1[Ingestion] --> A2[Triage] --> A3[Detection / Crop] --> A4[Quality] --> A5[Embedding] --> A6[Candidate Generation] --> A7[Identity Gating]
+    end
 
-- Streamlit application;
-- UI pages;
-- displaying backend outputs;
-- review queue;
-- evidence panels;
-- movement visualization;
-- alerts;
-- evaluation dashboard;
-- final integration.
+    subgraph D3["Developer 3 — Backend B: History + Movement + Evaluation"]
+        direction LR
+        B1[Observation] --> B2[Trusted History] --> B3[Movement Analysis] --> B4[Alerts]
+    end
 
-Developer 1 does NOT implement ML algorithms.
+    A7 -->|IdentityDecision| B1
+    D2 -.consumed by.-> D1
+    D3 -.consumed by.-> D1
 
----
+    style D1 fill:#fff3e0,stroke:#e65100
+    style D2 fill:#e3f2fd,stroke:#0d47a1
+    style D3 fill:#e8f5e9,stroke:#1b5e20
+```
 
-## Developer 2 — BACKEND A
-## PERCEPTION + IDENTITY
+**Developer 1** does NOT implement ML algorithms.
 
-Responsible for:
+**Developer 2** outputs: `IdentityDecision`
 
-IMAGE
-→ INGESTION
-→ TRIAGE
-→ DETECTION/CROP
-→ QUALITY
-→ EMBEDDING
-→ CANDIDATE GENERATION
-→ IDENTITY GATING
-
-Outputs:
-
-IdentityDecision
-
----
-
-## Developer 3 — BACKEND B
-## HISTORY + MOVEMENT + EVALUATION
-
-Responsible for:
-
-IdentityDecision
-→ Observation
-→ Trusted History
-→ Movement Analysis
-→ Alerts
-
-Also responsible for:
-
-Baseline vs Evidence-Gated evaluation.
+**Developer 3** is also responsible for **Baseline vs Evidence-Gated evaluation**.
 
 ---
 
@@ -114,45 +96,52 @@ Baseline vs Evidence-Gated evaluation.
 
 All developers MUST use:
 
-src/schemas.py
+`src/schemas.py`
 
 as the single source of truth.
 
 Do not independently redefine data structures.
 
-Core data flow:
+### Core data flow
 
-ImageRecord
-    ↓
-TriageRecord
-    ↓
-DetectionRecord
-    ↓
-IdentityCandidate
-    ↓
-IdentityDecision
-    ↓
-Observation
-    ↓
-MovementAlert
+```mermaid
+flowchart LR
+    A[ImageRecord] --> B[TriageRecord] --> C[DetectionRecord] --> D[IdentityCandidate] --> E[IdentityDecision] --> F[Observation] --> G[MovementAlert]
+
+    style A fill:#eceff1,stroke:#37474f
+    style B fill:#eceff1,stroke:#37474f
+    style C fill:#eceff1,stroke:#37474f
+    style D fill:#eceff1,stroke:#37474f
+    style E fill:#ffe0b2,stroke:#e65100
+    style F fill:#eceff1,stroke:#37474f
+    style G fill:#ffcdd2,stroke:#b71c1c
+```
 
 ---
 
 # 5. CRITICAL SAFETY RULE
 
-ONLY:
+```mermaid
+flowchart LR
+    T[trusted_match] -->|MAY update| H[(Trusted Longitudinal History)]
 
-trusted_match
+    subgraph Blocked["MUST NOT update trusted history"]
+        direction LR
+        S1[ambiguous_review]
+        S2[unknown]
+        S3[insufficient_evidence]
+        S4[rejected]
+        S5[provisional]
+    end
 
-may update trusted longitudinal history.
+    Blocked -.blocked.-> H
 
-These MUST NOT update trusted history:
+    style T fill:#2e7d32,color:#fff,stroke:#1b5e20
+    style H fill:#0d47a1,color:#fff,stroke:#0d47a1
+    style Blocked fill:#ffebee,stroke:#c62828
+```
 
-- ambiguous_review;
-- unknown;
-- insufficient_evidence;
-- rejected;
-- provisional.
+**ONLY** `trusted_match` may update trusted longitudinal history.
 
 Uncertain observations may be displayed and reviewed but cannot
 silently contaminate trusted history.
@@ -193,7 +182,7 @@ Demo mode may use:
 - sample images;
 - simulated movement observations.
 
-Demo data MUST NEVER be presented as real Pench observations.
+**Demo data MUST NEVER be presented as real Pench observations.**
 
 Real public datasets can be integrated later.
 
@@ -203,14 +192,12 @@ Development must NOT stop while waiting for a perfect dataset.
 
 # 8. BASELINE
 
-Implement:
+```mermaid
+flowchart LR
+    I1[Image] --> P1[Identity Prediction] --> A1[Always Assign] --> H1[History] --> M1[Movement] --> AL1[Alert]
 
-IMAGE
-→ IDENTITY PREDICTION
-→ ALWAYS ASSIGN
-→ HISTORY
-→ MOVEMENT
-→ ALERT
+    style A1 fill:#ffcdd2,stroke:#b71c1c
+```
 
 This is the baseline.
 
@@ -218,14 +205,14 @@ This is the baseline.
 
 # 9. PROPOSED SYSTEM
 
-Implement:
+```mermaid
+flowchart LR
+    I2[Image] --> C2[Candidate Generation] --> G2[Identity Gating] --> H2[Trusted History Only] --> M2[Movement] --> D2{Alert / Suppress / Review}
 
-IMAGE
-→ CANDIDATE GENERATION
-→ IDENTITY GATING
-→ TRUSTED HISTORY ONLY
-→ MOVEMENT
-→ ALERT / SUPPRESS / REVIEW
+    style G2 fill:#c8e6c9,stroke:#1b5e20
+    style H2 fill:#c8e6c9,stroke:#1b5e20
+    style D2 fill:#fff3e0,stroke:#e65100
+```
 
 ---
 
@@ -244,20 +231,29 @@ Measure where labels permit:
 - artefact suppression;
 - observations prevented from entering trusted history.
 
-Never fabricate results.
+**Never fabricate results.**
 
 ---
 
 # 11. IDENTITY STATES
 
-Allowed identity decisions:
+```mermaid
+flowchart TD
+    Img[Incoming Image] --> Decision{Identity Decision}
+    Decision --> TM[trusted_match]
+    Decision --> AR[ambiguous_review]
+    Decision --> UK[unknown]
+    Decision --> IE[insufficient_evidence]
+    Decision --> NT[non_tiger]
+    Decision --> BL[blank]
 
-- trusted_match
-- ambiguous_review
-- unknown
-- insufficient_evidence
-- non_tiger
-- blank
+    style TM fill:#2e7d32,color:#fff
+    style AR fill:#f9a825,color:#000
+    style UK fill:#ef6c00,color:#fff
+    style IE fill:#c62828,color:#fff
+    style NT fill:#616161,color:#fff
+    style BL fill:#9e9e9e,color:#fff
+```
 
 Every decision must contain:
 
@@ -265,7 +261,7 @@ Every decision must contain:
 - reason codes;
 - evidence summary;
 - top candidates;
-- update_history.
+- `update_history`.
 
 ---
 
@@ -273,24 +269,19 @@ Every decision must contain:
 
 Initial configurable heuristic:
 
-E =
-0.55V +
-0.15Q +
-0.15S +
-0.10T +
-0.05H
+```
+E = 0.55V + 0.15Q + 0.15S + 0.10T + 0.05H
+```
 
-where:
+| Symbol | Meaning |
+|---|---|
+| V | visual evidence |
+| Q | image quality |
+| S | spatial feasibility |
+| T | temporal feasibility |
+| H | history consistency |
 
-V = visual evidence
-Q = image quality
-S = spatial feasibility
-T = temporal feasibility
-H = history consistency
-
-These weights are prototype heuristics.
-
-They are NOT scientifically validated parameters.
+These weights are **prototype heuristics**. They are **NOT** scientifically validated parameters.
 
 Thresholds must be configurable.
 
@@ -301,11 +292,11 @@ Thresholds must be configurable.
 Unless a scientifically validated home-range method is implemented,
 use:
 
-"historical capture area"
+> "historical capture area"
 
 instead of:
 
-"validated home range".
+> "validated home range".
 
 Never claim behavioural change from one isolated observation.
 
@@ -313,16 +304,17 @@ Never claim behavioural change from one isolated observation.
 
 # 14. ALERT TYPES
 
-Support:
-
-- NEW_STATION
-- OUTSIDE_HISTORICAL_AREA
-- UNUSUAL_TRAVEL
-- PROLONGED_ABSENCE
-- BUFFER_OR_VILLAGE_ADJACENT
-- POSSIBLE_DISPERSAL
-- INSUFFICIENT_EVIDENCE
-- CAMERA_OR_SURVEY_ARTEFACT
+```mermaid
+flowchart TD
+    Alerts[Alert Types] --> A1[NEW_STATION]
+    Alerts --> A2[OUTSIDE_HISTORICAL_AREA]
+    Alerts --> A3[UNUSUAL_TRAVEL]
+    Alerts --> A4[PROLONGED_ABSENCE]
+    Alerts --> A5[BUFFER_OR_VILLAGE_ADJACENT]
+    Alerts --> A6[POSSIBLE_DISPERSAL]
+    Alerts --> A7[INSUFFICIENT_EVIDENCE]
+    Alerts --> A8[CAMERA_OR_SURVEY_ARTEFACT]
+```
 
 Alerts must distinguish:
 
@@ -349,7 +341,7 @@ Downgrade or suppress alerts when:
 
 # 16. TECHNOLOGY
 
-Preferred:
+**Preferred:**
 
 - Python 3.11+
 - Streamlit
@@ -363,7 +355,7 @@ Preferred:
 - Plotly
 - PyTorch/torchvision
 
-Optional:
+**Optional:**
 
 - OpenCLIP
 - Ultralytics YOLO
@@ -374,21 +366,17 @@ Optional:
 - FAISS
 
 No component may require a GPU.
-
 No paid API.
-
 No cloud-only dependency.
-
 No large-model training from scratch.
-
 Every ML component needs a deterministic/demo fallback.
 
 ---
 
 # 17. REPOSITORY STRUCTURE
 
+```
 project/
-
 ├── PROJECT_CONTRACT.md
 ├── README.md
 ├── requirements.txt
@@ -421,38 +409,42 @@ project/
 │   └── evaluation.py
 │
 └── tests/
+```
 
 ---
 
 # 18. OWNERSHIP
 
-Developer 1 owns:
+```mermaid
+flowchart TB
+    subgraph Dev1["Developer 1"]
+        O1[app.py]
+        O2[ui/]
+        O3[frontend / integration code]
+    end
 
-- app.py
-- ui/
-- frontend/integration code
+    subgraph Dev2["Developer 2"]
+        O4[ingestion.py]
+        O5[triage.py]
+        O6[perception.py]
+        O7[identity.py]
+        O8[gating.py]
+    end
 
-Developer 2 owns:
+    subgraph Dev3["Developer 3"]
+        O9[history.py]
+        O10[movement.py]
+        O11[alerts.py]
+        O12[evaluation.py]
+    end
 
-- ingestion.py
-- triage.py
-- perception.py
-- identity.py
-- gating.py
+    subgraph Shared["Shared (minimal changes only)"]
+        O13[schemas.py]
+        O14[pipeline.py]
+    end
 
-Developer 3 owns:
-
-- history.py
-- movement.py
-- alerts.py
-- evaluation.py
-
-Shared:
-
-- schemas.py
-- pipeline.py
-
-Shared files must have minimal changes.
+    style Shared fill:#fff9c4,stroke:#f57f17
+```
 
 Any schema change must be communicated to all developers before merging.
 
@@ -460,21 +452,23 @@ Any schema change must be communicated to all developers before merging.
 
 # 19. SHARED INTERFACES
 
-Developer 2 must expose:
+```mermaid
+flowchart LR
+    subgraph Dev2API["Developer 2 exposes"]
+        F1["process_image_directory(path)"]
+        F2["generate_candidates(image_record)"]
+        F3["make_identity_decision(...)"]
+    end
 
-process_image_directory(path)
+    subgraph Dev3API["Developer 3 exposes"]
+        F4["create_observation(...)"]
+        F5["generate_movement_alerts(...)"]
+        F6["run_evaluation(...)"]
+    end
 
-generate_candidates(image_record)
-
-make_identity_decision(...)
-
-Developer 3 must expose:
-
-create_observation(...)
-
-generate_movement_alerts(...)
-
-run_evaluation(...)
+    Dev2API --> Dev1[Developer 1 UI]
+    Dev3API --> Dev1
+```
 
 Developer 1 must consume these interfaces rather than reimplementing
 their logic.
@@ -483,19 +477,22 @@ their logic.
 
 # 20. INTEGRATION ORDER
 
-Integration happens in this order:
+```mermaid
+flowchart LR
+    S1["1. Schemas"] --> S2["2. Demo data"] --> S3["3. Backend A"] --> S4["4. Backend B"] --> S5["5. Pipeline"] --> S6["6. Frontend"] --> S7["7. Baseline comparison"] --> S8["8. Advanced features"] --> S9["9. UI polish"]
 
-1. schemas;
-2. demo data;
-3. backend A;
-4. backend B;
-5. pipeline;
-6. frontend;
-7. baseline comparison;
-8. advanced features;
-9. UI polish.
+    style S1 fill:#1565c0,color:#fff
+    style S2 fill:#1565c0,color:#fff
+    style S3 fill:#2e7d32,color:#fff
+    style S4 fill:#2e7d32,color:#fff
+    style S5 fill:#6a1b9a,color:#fff
+    style S6 fill:#e65100,color:#fff
+    style S7 fill:#e65100,color:#fff
+    style S8 fill:#757575,color:#fff
+    style S9 fill:#757575,color:#fff
+```
 
-Do NOT build the complete UI before the backend pipeline works.
+**Do NOT build the complete UI before the backend pipeline works.**
 
 ---
 
@@ -516,7 +513,9 @@ At minimum:
 
 Run:
 
+```
 pytest
+```
 
 before merging.
 
@@ -524,58 +523,82 @@ before merging.
 
 # 22. GIT RULES
 
-main is protected.
+```mermaid
+gitGraph
+    commit id: "main: initial"
+    branch dev1-frontend
+    branch dev2-backend-a
+    branch dev3-backend-b
+    checkout dev2-backend-a
+    commit id: "perception + identity"
+    checkout dev3-backend-b
+    commit id: "history + movement"
+    checkout dev1-frontend
+    commit id: "streamlit UI"
+    checkout main
+    merge dev2-backend-a tag: "PR review"
+    merge dev3-backend-b tag: "PR review"
+    merge dev1-frontend tag: "PR review"
+```
 
-Developers work only on their assigned branches.
+`main` is protected.
 
-No direct pushes to main.
-
-All changes enter main through Pull Requests.
-
-Do not force-push shared branches.
-
-Do not rewrite another developer's code unnecessarily.
+- Developers work only on their assigned branches.
+- No direct pushes to `main`.
+- All changes enter `main` through Pull Requests.
+- Do not force-push shared branches.
+- Do not rewrite another developer's code unnecessarily.
 
 ---
 
 # 23. FEATURE PRIORITY
 
-P0:
+```mermaid
+flowchart TB
+    subgraph P0["P0 — must have"]
+        p0a[Complete end-to-end pipeline]
+        p0b[Demo mode]
+        p0c[Schemas]
+        p0d[Identity gating]
+        p0e[Trusted history]
+        p0f[Movement]
+        p0g[Alerts]
+        p0h[Baseline]
+        p0i[Evaluation]
+        p0j[CPU fallback]
+    end
 
-- complete end-to-end pipeline;
-- demo mode;
-- schemas;
-- identity gating;
-- trusted history;
-- movement;
-- alerts;
-- baseline;
-- evaluation;
-- CPU fallback.
+    subgraph P1["P1 — should have"]
+        p1a[Better embeddings]
+        p1b[Better detection]
+        p1c[Image quality]
+        p1d[Camera relocation]
+        p1e[Review queue]
+        p1f[Stress tests]
+    end
 
-P1:
+    subgraph P2["P2 — nice to have"]
+        p2a[Unknown clustering]
+        p2b[Calibration]
+        p2c[Unseen-camera evaluation]
+        p2d[Temporal evaluation]
+        p2e[Advanced spatial analysis]
+    end
 
-- better embeddings;
-- better detection;
-- image quality;
-- camera relocation;
-- review queue;
-- stress tests.
+    subgraph P3["P3 — stretch"]
+        p3a[Conformal prediction]
+        p3b[Sophisticated GIS]
+        p3c[Animations]
+        p3d[Advanced visual polish]
+    end
 
-P2:
+    P0 --> P1 --> P2 --> P3
 
-- unknown clustering;
-- calibration;
-- unseen-camera evaluation;
-- temporal evaluation;
-- advanced spatial analysis.
-
-P3:
-
-- conformal prediction;
-- sophisticated GIS;
-- animations;
-- advanced visual polish.
+    style P0 fill:#c8e6c9,stroke:#1b5e20
+    style P1 fill:#bbdefb,stroke:#0d47a1
+    style P2 fill:#e1bee7,stroke:#4a148c
+    style P3 fill:#eeeeee,stroke:#616161
+```
 
 ---
 
@@ -583,7 +606,7 @@ P3:
 
 If time is running out:
 
-CUT:
+**CUT (in order):**
 
 1. conformal prediction;
 2. advanced GIS;
@@ -591,7 +614,7 @@ CUT:
 4. animations;
 5. decorative UI.
 
-DO NOT CUT:
+**DO NOT CUT:**
 
 1. identity gating;
 2. trusted-only history;
@@ -604,8 +627,6 @@ DO NOT CUT:
 ---
 
 # 25. DEFINITION OF DONE
-
-The prototype is considered functional when:
 
 - application starts locally;
 - images can be processed;
@@ -644,9 +665,9 @@ longitudinal movement-alert reliability.
 
 # 27. GOLDEN RULE
 
-The objective is NOT:
+The objective is **NOT**:
 
-"assign an identity to every image."
+> "assign an identity to every image."
 
 The objective is:
 
