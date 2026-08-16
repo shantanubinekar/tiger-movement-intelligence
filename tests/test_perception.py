@@ -290,5 +290,51 @@ class TestStripePatternMatching:
             f"Expected strong margin between same ({same_score:.4f}) and different ({diff_score:.4f})"
         )
 
+    def test_candidate_relative_normalized_local_score_on_real_data(self):
+        """Assert that candidate-relative normalization produces a high normalized local_score
+        (close to 1.0) for the correct catalogue match while keeping incorrect matches near 0.0."""
+        from src.identity import get_default_catalogue, generate_candidates
+        from src.perception import generate_embedding
+
+        atrw_dir = Path(__file__).resolve().parents[1] / "data" / "real_tigers"
+        q1 = atrw_dir / "query" / "T_real_01_query.jpg"
+
+        if not q1.exists():
+            pytest.skip("ATRW real tiger images not available")
+
+        emb = generate_embedding(str(q1))
+        catalogue = get_default_catalogue()
+        context = {
+            "crop_path": str(q1),
+            "station_id": "STATION_R1",
+            "quality_score": 0.85,
+        }
+
+        candidates = generate_candidates(
+            embedding=emb,
+            image_id="T_real_01_query",
+            catalogue=catalogue,
+            context=context,
+            top_k=5,
+        )
+
+        assert len(candidates) >= 2
+        correct_c = next((c for c in candidates if c.candidate_identity == "T_real_01"), None)
+        assert correct_c is not None, "Correct candidate T_real_01 should be among top candidates"
+
+        # Normalized local score for correct tiger should be high (>= 0.80)
+        assert correct_c.local_score >= 0.80, (
+            f"Expected normalized local_score for correct tiger to be >= 0.80, got {correct_c.local_score}"
+        )
+
+        # Other candidates should have significantly lower normalized local scores
+        other_candidates = [c for c in candidates if c.candidate_identity != "T_real_01"]
+        for oc in other_candidates:
+            assert correct_c.local_score > oc.local_score + 0.50, (
+                f"Expected correct local_score ({correct_c.local_score}) to beat "
+                f"incorrect candidate {oc.candidate_identity} ({oc.local_score}) by at least 0.50"
+            )
+
+
 
 

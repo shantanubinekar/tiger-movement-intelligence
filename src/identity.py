@@ -362,7 +362,11 @@ def generate_candidates(
     # Check for real crop paths for classical stripe keypoint matching
     query_crop_path = ctx.get("crop_path") or ctx.get("image_path")
 
-    candidates = []
+    # Pass 1: Compute preliminary component scores & raw local scores for ranked candidates
+    raw_candidates_info = []
+    raw_local_scores = []
+    is_real_keypoint_match = False
+
     for rank_idx, cat_idx in enumerate(ranked_indices):
         identity_id = cat_ids[cat_idx]
         visual_score = float(max(0.0, min(1.0, (similarities[cat_idx] + 1.0) / 2.0)))
@@ -377,6 +381,7 @@ def generate_candidates(
         if query_crop_path and cat_img_path:
             from src.perception import match_stripe_keypoints
             local_score = match_stripe_keypoints(str(query_crop_path), str(cat_img_path))
+            is_real_keypoint_match = True
 
         if local_score is None:
             if local_similarities is not None:
@@ -386,6 +391,40 @@ def generate_candidates(
                 h = int(hashlib.sha256(f"{image_id}_{identity_id}_local".encode()).hexdigest(), 16)
                 jitter = ((h % 100) / 100.0 * 0.10) - 0.05
                 local_score = float(min(1.0, max(0.0, visual_score * 0.90 + jitter)))
+
+        raw_local_scores.append(local_score)
+        raw_candidates_info.append({
+            "identity_id": identity_id,
+            "visual_score": visual_score,
+            "raw_local_score": local_score,
+            "cat_meta": cat_meta,
+        })
+
+    # Pass 2: Candidate-relative normalization of local_score
+    # Prototype scaling heuristic: Maps raw inlier ratios (~0.02 - 0.19) relative to the
+    # candidate set so that distinct, top-ranking stripe matches scale near 1.0 and spurious
+    # matches scale near 0.0 for the downstream multi-evidence formula.
+    min_raw = min(raw_local_scores) if raw_local_scores else 0.0
+    max_raw = max(raw_local_scores) if raw_local_scores else 0.0
+    range_raw = max_raw - min_raw
+
+    candidates = []
+    for rank_idx, info in enumerate(raw_candidates_info):
+        identity_id = info["identity_id"]
+        visual_score = info["visual_score"]
+        raw_local = info["raw_local_score"]
+        cat_meta = info["cat_meta"]
+
+        if is_real_keypoint_match and max_raw > 0.015:
+            # Clear stripe signal present in candidate set: scale top match near 1.0
+            rel_norm = (raw_local - min_raw) / (range_raw + 1e-6)
+            abs_boost = min(1.0, raw_local / 0.15)
+            local_score = float(min(1.0, max(0.0, 0.70 * rel_norm + 0.30 * abs_boost)))
+        elif is_real_keypoint_match:
+            # Low inlier floor across all candidates (e.g. blurred image): preserve low score
+            local_score = float(min(1.0, max(0.0, raw_local / 0.15)))
+        else:
+            local_score = raw_local
 
         # Quality score: passed in context or default
         quality_score = ctx.get("quality_score", 0.5)
@@ -399,8 +438,6 @@ def generate_candidates(
             or (isinstance(station_id, str) and ("BUFFER" in station_id.upper() or "VILLAGE" in station_id.upper()))
             or bool(ctx.get("is_buffer"))
         )
-
-        cat_meta = catalogue.get_metadata(identity_id) or {}
 
         # Spatial feasibility: check if current station is in the tiger's
         # known station list from catalogue metadata AND trusted longitudinal history
