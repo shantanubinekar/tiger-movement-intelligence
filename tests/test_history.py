@@ -261,3 +261,40 @@ class TestIndividualSummary:
         assert summary.activity_centroid is not None
         assert summary.camera_effort_history["STATION_A1"] == 2
         assert summary.camera_effort_history["STATION_B2"] == 1
+
+
+class TestHistoricalCaptureArea:
+    """Test compute_historical_capture_area filtering rules."""
+
+    def test_capture_area_requires_at_least_two_obs_per_station(self):
+        """Single observation stations should be filtered as transient noise."""
+        from datetime import timedelta
+        base = datetime(2026, 1, 5, 6, 0, 0, tzinfo=timezone.utc)
+
+        # 3 stations, but only 1 observation each -> hull should be None (needs >=2 obs per station)
+        for i, (st, lat, lon) in enumerate([
+            ("STATION_A1", 21.680, 79.290),
+            ("STATION_B2", 21.702, 79.315),
+            ("STATION_C3", 21.720, 79.330),
+        ]):
+            d = _trusted_decision(image_id=f"img_single_{i}", identity_id="T01")
+            m = _image_metadata(station_id=st, latitude=lat, longitude=lon, timestamp=base + timedelta(days=i))
+            update_trusted_history(d, m)
+
+        history = get_history()
+        assert history.compute_historical_capture_area("T01") is None
+
+        # Add a 2nd observation for each of the 3 stations -> now they qualify as established stations
+        for i, (st, lat, lon) in enumerate([
+            ("STATION_A1", 21.680, 79.290),
+            ("STATION_B2", 21.702, 79.315),
+            ("STATION_C3", 21.720, 79.330),
+        ]):
+            d = _trusted_decision(image_id=f"img_double_{i}", identity_id="T01")
+            m = _image_metadata(station_id=st, latitude=lat, longitude=lon, timestamp=base + timedelta(days=i+10))
+            update_trusted_history(d, m)
+
+        hull = history.compute_historical_capture_area("T01")
+        assert hull is not None
+        assert len(hull) >= 3
+

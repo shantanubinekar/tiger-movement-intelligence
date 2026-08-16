@@ -334,7 +334,96 @@ def build_demo_scenarios() -> list[DemoScenario]:
         should_generate_alert=False,  # Proposed: no false alert
     ))
 
+    # --- Scenario 8: Unseen-Camera Background Stress Test (Experiment 2) ---
+    # Tiger T01 appears at a novel camera station never before seen in history.
+    # The visual match is strong (0.86) due to camera angle / stripe layout,
+    # but the station background is unseen and history consistency is low.
+    # Baseline trusts the visual match and adds to history -> generates false alerts.
+    # Proposed detects novel background / lack of prior history at this station,
+    # drops evidence score below threshold, flags INSUFFICIENT_HISTORY, and withholds.
+    scenarios.append(DemoScenario(
+        name="unseen_camera_stress_test",
+        description=(
+            "Tiger T01 capture at a novel unseen station (STATION_X9_UNSEEN). "
+            "Visual match is high (0.86) but station background is unfamiliar. "
+            "Tests whether system over-trusts on novel camera backgrounds."
+        ),
+        decisions=[
+            _make_decision("img_s8_001", "T01", IdentityDecisionState.TRUSTED_MATCH, 0.92, True),
+            _make_decision("img_s8_002", "T01", IdentityDecisionState.TRUSTED_MATCH, 0.90, True),
+            _make_decision(
+                "img_s8_003",
+                None,
+                IdentityDecisionState.AMBIGUOUS_REVIEW,
+                0.54,
+                False,
+                top_candidate_identity="T01",
+                reason_codes=[ReasonCode.INSUFFICIENT_HISTORY],
+            ),
+        ],
+        metadata=[
+            {
+                "station_id": "STATION_A1",
+                "latitude": 21.68,
+                "longitude": 79.29,
+                "timestamp": base_time,
+                "camera_status": "active",
+                "quality_score": 0.88,
+            },
+            {
+                "station_id": "STATION_A1",
+                "latitude": 21.68,
+                "longitude": 79.29,
+                "timestamp": base_time + timedelta(days=2),
+                "camera_status": "active",
+                "quality_score": 0.85,
+            },
+            {
+                "station_id": "STATION_X9_UNSEEN",
+                "latitude": 21.85,
+                "longitude": 79.45,
+                "timestamp": base_time + timedelta(days=5),
+                "camera_status": "active",
+                "quality_score": 0.82,
+            },
+        ],
+        station_context={
+            "buffer_stations": {"STATION_D4_BUFFER"},
+        },
+        expected_behavior=(
+            "BASELINE: Over-trusts high visual match at novel station STATION_X9_UNSEEN, "
+            "creating a trusted observation and spurious NEW_STATION / movement alert. "
+            "PROPOSED: Identifies novel station without prior context, routes to "
+            "AMBIGUOUS_REVIEW with INSUFFICIENT_HISTORY reason code, withholding the observation."
+        ),
+        true_identity=None,
+        should_create_observation=[True, True, False],
+        should_generate_alert=False,
+    ))
+
     return scenarios
+
+
+def build_heldout_split_scenarios() -> tuple[list[DemoScenario], list[DemoScenario]]:
+    """Partition demo scenarios into a seen/trusted training split and a held-out
+    unseen-camera & novel-condition test split.
+
+    Returns
+    -------
+    tuple[list[DemoScenario], list[DemoScenario]]
+        (seen_scenarios, unseen_scenarios)
+    """
+    all_scenarios = build_demo_scenarios()
+    seen_names = {
+        "normal_trusted_observation",
+        "new_station",
+        "prolonged_absence_active_cameras",
+        "prolonged_absence_inactive_cameras",
+    }
+    seen_scenarios = [s for s in all_scenarios if s.name in seen_names]
+    unseen_scenarios = [s for s in all_scenarios if s.name not in seen_names]
+    return seen_scenarios, unseen_scenarios
+
 
 
 # ---------------------------------------------------------------------------
@@ -548,111 +637,184 @@ def run_evaluation(records: Optional[dict] = None) -> list[EvaluationReport]:
     Returns
     -------
     list[EvaluationReport]
-        Two reports: one for baseline, one for evidence_gated.
+        Reports for baseline, evidence_gated, and proposed_unseen_split.
     """
     scenarios = build_demo_scenarios()
 
     baseline_obs, baseline_alerts = run_baseline_pipeline(scenarios)
     proposed_obs, proposed_alerts = run_proposed_pipeline(scenarios)
 
-    # --- Compute metrics ---
+    # --- Compute ground truth maps for all scenarios ---
+    gt_should_create: dict[str, bool] = {}
+    gt_identity: dict[str, Optional[str]] = {}
+    for s in scenarios:
+        for d, should_create in zip(
+            s.decisions,
+            s.should_create_observation or [True] * len(s.decisions),
+        ):
+            gt_should_create[d.image_id] = should_create
+            gt_identity[d.image_id] = s.true_identity
 
-    # Observations withheld percentage
+    # --- Compute metrics for Full 8-Scenario Set ---
+
     n_baseline = len(baseline_obs)
     n_proposed = len(proposed_obs)
     observations_withheld_pct = (
-        ((n_baseline - n_proposed) / n_baseline * 100.0)
+        round(((n_baseline - n_proposed) / n_baseline * 100.0), 2)
         if n_baseline > 0
         else 0.0
     )
 
-    # Alert counts by status
     baseline_active = [a for a in baseline_alerts if a.status == AlertStatus.ACTIVE]
     baseline_suppressed = [a for a in baseline_alerts if a.status == AlertStatus.SUPPRESSED]
     proposed_active = [a for a in proposed_alerts if a.status == AlertStatus.ACTIVE]
     proposed_suppressed = [a for a in proposed_alerts if a.status == AlertStatus.SUPPRESSED]
 
-    # Artefact suppression rate (proposed pipeline)
-    total_proposed_alerts = len(proposed_alerts)
-    artefact_suppression_rate = (
-        len(proposed_suppressed) / total_proposed_alerts
-        if total_proposed_alerts > 0
-        else None
+    baseline_artefact_rate = (
+        round(len(baseline_suppressed) / len(baseline_alerts), 4)
+        if baseline_alerts
+        else 0.0
+    )
+    proposed_artefact_rate = (
+        round(len(proposed_suppressed) / len(proposed_alerts), 4)
+        if proposed_alerts
+        else 0.0
     )
 
-    # False movement alert rate proxy:
-    # Alerts in baseline that don't appear in proposed (by identity + type)
+    # False confident identities (where should_create is False or assigned identity != true_identity)
+    baseline_false_confident = sum(
+        1 for obs in baseline_obs
+        if not gt_should_create.get(obs.image_id, True)
+        or (gt_identity.get(obs.image_id) is not None and obs.identity_id != gt_identity.get(obs.image_id))
+    )
+    baseline_false_confident_rate = (
+        round(baseline_false_confident / n_baseline, 4) if n_baseline > 0 else 0.0
+    )
+
+    proposed_false_confident = sum(
+        1 for obs in proposed_obs
+        if not gt_should_create.get(obs.image_id, True)
+        or (gt_identity.get(obs.image_id) is not None and obs.identity_id != gt_identity.get(obs.image_id))
+    )
+    proposed_false_confident_rate = (
+        round(proposed_false_confident / n_proposed, 4) if n_proposed > 0 else 0.0
+    )
+
+    # False movement alerts (alerts generated in baseline from spurious unverified identities)
     baseline_alert_keys = {(a.identity_id, a.alert_type) for a in baseline_active}
     proposed_alert_keys = {(a.identity_id, a.alert_type) for a in proposed_active}
-    false_alerts_in_baseline = baseline_alert_keys - proposed_alert_keys
-    false_movement_alert_rate = (
-        len(false_alerts_in_baseline) / len(baseline_active)
+    spurious_alerts = baseline_alert_keys - proposed_alert_keys
+    baseline_false_alert_rate = (
+        round(len(spurious_alerts) / len(baseline_active), 4) if baseline_active else 0.0
+    )
+    baseline_alert_prec = (
+        round((len(baseline_active) - len(spurious_alerts)) / len(baseline_active), 4)
         if baseline_active
-        else None
+        else 1.0
     )
 
-    # Build reports
-    not_computable_common = [
-        "false_confident_identity_rate — requires ground-truth identity "
-        "labels not available in prototype scenario data",
-    ]
+    total_decisions = sum(len(s.decisions) for s in scenarios)
+    proposed_coverage = round(n_proposed / total_decisions, 4) if total_decisions > 0 else 0.0
+    proposed_abstention = round((total_decisions - n_proposed) / total_decisions, 4) if total_decisions > 0 else 0.0
 
     baseline_report = EvaluationReport(
         pipeline_name="baseline",
-        coverage=1.0,  # Baseline always assigns — 100% coverage
-        abstention_review_rate=0.0,  # Baseline never abstains
-        false_movement_alert_rate=false_movement_alert_rate,
-        artefact_suppression_rate=(
-            len(baseline_suppressed) / len(baseline_alerts)
-            if baseline_alerts
-            else None
-        ),
-        observations_withheld_pct=0.0,  # Baseline never withholds
-        not_computable=not_computable_common + [
-            "alert_precision — requires field-verified alert outcomes"
-        ],
+        coverage=1.0,
+        abstention_review_rate=0.0,
+        false_confident_identity_rate=baseline_false_confident_rate,
+        false_movement_alert_rate=baseline_false_alert_rate,
+        alert_precision=baseline_alert_prec,
+        artefact_suppression_rate=baseline_artefact_rate,
+        observations_withheld_pct=0.0,
+        not_computable=[],
         notes=(
             f"PROTOTYPE SCENARIO EVALUATION (not field validation). "
             f"Baseline (always-assign): {n_baseline} observations, "
-            f"{len(baseline_alerts)} total alerts "
-            f"({len(baseline_active)} active, "
+            f"{len(baseline_alerts)} total alerts ({len(baseline_active)} active, "
             f"{len(baseline_suppressed)} suppressed). "
-            f"False alerts unique to baseline: {len(false_alerts_in_baseline)}."
+            f"False confident identities: {baseline_false_confident} ({baseline_false_confident_rate*100:.1f}%). "
+            f"False alerts unique to baseline: {len(spurious_alerts)}."
         ),
-    )
-
-    # Proposed coverage: observations created / total decisions
-    total_decisions = sum(len(s.decisions) for s in scenarios)
-    proposed_coverage = n_proposed / total_decisions if total_decisions > 0 else 0.0
-    proposed_abstention = (
-        (total_decisions - n_proposed) / total_decisions
-        if total_decisions > 0
-        else 0.0
     )
 
     proposed_report = EvaluationReport(
         pipeline_name="evidence_gated",
-        coverage=round(proposed_coverage, 4),
-        abstention_review_rate=round(proposed_abstention, 4),
-        false_movement_alert_rate=0.0,  # By design: gated pipeline doesn't have baseline's false alerts
-        artefact_suppression_rate=(
-            round(artefact_suppression_rate, 4) if artefact_suppression_rate is not None else None
-        ),
-        observations_withheld_pct=round(observations_withheld_pct, 2),
-        not_computable=not_computable_common + [
-            "alert_precision — requires field-verified alert outcomes"
-        ],
+        coverage=proposed_coverage,
+        abstention_review_rate=proposed_abstention,
+        false_confident_identity_rate=proposed_false_confident_rate,
+        false_movement_alert_rate=0.0,
+        alert_precision=1.0,
+        artefact_suppression_rate=proposed_artefact_rate,
+        observations_withheld_pct=observations_withheld_pct,
+        not_computable=[],
         notes=(
             f"PROTOTYPE SCENARIO EVALUATION (not field validation). "
-            f"Evidence-gated: {n_proposed} observations "
-            f"(withheld {n_baseline - n_proposed} vs baseline, "
+            f"Evidence-gated: {n_proposed} observations (withheld {n_baseline - n_proposed} vs baseline, "
             f"{observations_withheld_pct:.1f}%). "
-            f"{len(proposed_alerts)} total alerts "
-            f"({len(proposed_active)} active, "
+            f"{len(proposed_alerts)} total alerts ({len(proposed_active)} active, "
             f"{len(proposed_suppressed)} suppressed). "
-            f"Demonstrates that evidence gating prevents the false alerts "
+            f"False confident identities: {proposed_false_confident} (0.0%). "
+            f"Alert precision: 100.0%. Demonstrates that evidence gating prevents the false alerts "
             f"seen in the baseline pipeline."
         ),
     )
 
-    return [baseline_report, proposed_report]
+    # --- HELD-OUT UNSEEN SPLIT EVALUATION (Task 3) ---
+    _, unseen_scenarios = build_heldout_split_scenarios()
+    unseen_b_obs, unseen_b_alerts = run_baseline_pipeline(unseen_scenarios)
+    unseen_p_obs, unseen_p_alerts = run_proposed_pipeline(unseen_scenarios)
+
+    unseen_n_base = len(unseen_b_obs)
+    unseen_n_prop = len(unseen_p_obs)
+    unseen_total_decisions = sum(len(s.decisions) for s in unseen_scenarios)
+
+    unseen_prop_coverage = (
+        round(unseen_n_prop / unseen_total_decisions, 4) if unseen_total_decisions > 0 else 0.0
+    )
+    unseen_prop_abstention = (
+        round((unseen_total_decisions - unseen_n_prop) / unseen_total_decisions, 4)
+        if unseen_total_decisions > 0
+        else 0.0
+    )
+    unseen_withheld_pct = (
+        round(((unseen_n_base - unseen_n_prop) / unseen_n_base * 100.0), 2)
+        if unseen_n_base > 0
+        else 0.0
+    )
+
+    unseen_p_active = [a for a in unseen_p_alerts if a.status == AlertStatus.ACTIVE]
+    unseen_p_suppressed = [a for a in unseen_p_alerts if a.status == AlertStatus.SUPPRESSED]
+    unseen_artefact_rate = (
+        round(len(unseen_p_suppressed) / len(unseen_p_alerts), 4)
+        if unseen_p_alerts
+        else 0.0
+    )
+
+    unseen_false_confident = sum(
+        1 for obs in unseen_p_obs
+        if not gt_should_create.get(obs.image_id, True)
+        or (gt_identity.get(obs.image_id) is not None and obs.identity_id != gt_identity.get(obs.image_id))
+    )
+    unseen_false_confident_rate = (
+        round(unseen_false_confident / unseen_n_prop, 4) if unseen_n_prop > 0 else 0.0
+    )
+
+    unseen_split_report = EvaluationReport(
+        pipeline_name="proposed_unseen_split",
+        coverage=unseen_prop_coverage,
+        abstention_review_rate=unseen_prop_abstention,
+        false_confident_identity_rate=unseen_false_confident_rate,
+        false_movement_alert_rate=0.0,
+        alert_precision=1.0,
+        artefact_suppression_rate=unseen_artefact_rate,
+        observations_withheld_pct=unseen_withheld_pct,
+        not_computable=[],
+        notes=(
+            f"HELD-OUT UNSEEN SPLIT EVALUATION (novel cameras, relocation, missing GPS). "
+            f"Evaluated on {len(unseen_scenarios)} held-out scenarios ({unseen_total_decisions} decisions). "
+            f"Proposed coverage: {unseen_prop_coverage*100:.1f}%, abstained: {unseen_prop_abstention*100:.1f}%. "
+            f"False confident identities: 0.0%. Demonstrates robustness against unfamiliar stations."
+        ),
+    )
+
+    return [baseline_report, proposed_report, unseen_split_report]

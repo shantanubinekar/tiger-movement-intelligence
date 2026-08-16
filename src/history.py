@@ -112,26 +112,43 @@ class TrustedHistory:
         return (mean_lat, mean_lon)
 
     def compute_historical_capture_area(
-        self, identity_id: str
+        self,
+        identity_id: str,
+        min_station_observations: int = 2,
     ) -> Optional[list[tuple[float, float]]]:
-        """Convex hull of trusted observation coordinates.
+        """Convex hull of trusted observation coordinates for established stations.
+
+        Refinement (P2): Only includes stations where the individual has at least
+        `min_station_observations` trusted observations (default: 2) to filter out
+        single-observation transient noise.
 
         Returns a list of (lat, lon) vertices forming the convex hull,
-        or None if fewer than 3 distinct GPS points exist.
+        or None if fewer than 3 distinct qualifying GPS points exist.
 
         This is called 'historical capture area' per PROJECT_CONTRACT.md
         Section 13 — never 'home range' or 'validated home range.'
         """
         obs_list = self._observations.get(identity_id, [])
-        # Collect unique GPS points
-        points: list[tuple[float, float]] = []
-        seen: set[tuple[float, float]] = set()
+        if not obs_list:
+            return None
+
+        # Count trusted observations per station
+        station_counts: dict[str, int] = {}
+        station_coords: dict[str, tuple[float, float]] = {}
         for o in obs_list:
             if o.latitude is not None and o.longitude is not None:
-                pt = (o.latitude, o.longitude)
-                if pt not in seen:
-                    points.append(pt)
-                    seen.add(pt)
+                st_key = o.station_id or f"{round(o.latitude, 4)}_{round(o.longitude, 4)}"
+                station_counts[st_key] = station_counts.get(st_key, 0) + 1
+                if st_key not in station_coords:
+                    station_coords[st_key] = (o.latitude, o.longitude)
+
+        # Filter points to only those from established stations with >= min_station_observations
+        points: list[tuple[float, float]] = [
+            coords
+            for st_key, coords in station_coords.items()
+            if station_counts[st_key] >= min_station_observations
+        ]
+
         if len(points) < 3:
             return None
         return _convex_hull(points)

@@ -173,3 +173,41 @@ def test_evaluation_no_fabricated_numbers():
                 f"not_computable list for {report.pipeline_name}"
             )
 
+
+def test_heldout_split_scenarios():
+    """Verify that heldout partitioning splits scenarios into seen and unseen sets cleanly."""
+    from src.evaluation import build_heldout_split_scenarios
+    seen, unseen = build_heldout_split_scenarios()
+    assert len(seen) == 4
+    assert len(unseen) == 4
+    assert len(seen) + len(unseen) == 8
+
+
+def test_evaluation_computed_metrics_return_real_numbers():
+    """Confirm that core evaluation metrics return real float numbers across all 3 reports."""
+    reports = run_evaluation()
+    assert len(reports) == 3
+
+    baseline = next(r for r in reports if r.pipeline_name == "baseline")
+    gated = next(r for r in reports if r.pipeline_name == "evidence_gated")
+    unseen = next(r for r in reports if r.pipeline_name == "proposed_unseen_split")
+
+    for r in [baseline, gated, unseen]:
+        assert isinstance(r.coverage, float) and 0.0 <= r.coverage <= 1.0
+        assert isinstance(r.abstention_review_rate, float) and 0.0 <= r.abstention_review_rate <= 1.0
+        assert isinstance(r.observations_withheld_pct, float) and 0.0 <= r.observations_withheld_pct <= 100.0
+        assert isinstance(r.false_confident_identity_rate, float) and 0.0 <= r.false_confident_identity_rate <= 1.0
+        assert isinstance(r.false_movement_alert_rate, float) and 0.0 <= r.false_movement_alert_rate <= 1.0
+        assert isinstance(r.alert_precision, float) and 0.0 <= r.alert_precision <= 1.0
+
+    # Evidence-gated and unseen-split should eliminate false confident identities
+    assert gated.false_confident_identity_rate == 0.0
+    assert unseen.false_confident_identity_rate == 0.0
+    assert gated.alert_precision == 1.0
+    assert unseen.alert_precision == 1.0
+
+    # Baseline exhibits errors
+    assert baseline.false_confident_identity_rate > 0.0
+    assert baseline.alert_precision < 1.0
+
+

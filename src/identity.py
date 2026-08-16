@@ -43,10 +43,24 @@ class CatalogueStore:
         station_ids: Optional[list[str]] = None,
         last_seen_station: Optional[str] = None,
         observation_count: int = 0,
+        local_embedding: Optional[list[float]] = None,
     ) -> None:
         """Add or update an identity in the catalogue."""
+        emb_arr = np.array(embedding, dtype=np.float64)
+        if local_embedding is not None:
+            local_arr = np.array(local_embedding, dtype=np.float64)
+        else:
+            # Deterministic local embedding derivation if not provided
+            h = hashlib.sha256(f"{identity_id}_local_default".encode()).digest()
+            rng = np.random.RandomState(int.from_bytes(h[:4], "big"))
+            local_arr = emb_arr * 0.85 + 0.15 * rng.randn(len(emb_arr))
+            norm = np.linalg.norm(local_arr)
+            if norm > 0:
+                local_arr = local_arr / norm
+
         self._catalogue[identity_id] = {
-            "embedding": np.array(embedding, dtype=np.float64),
+            "embedding": emb_arr,
+            "local_embedding": local_arr,
             "station_ids": station_ids or [],
             "last_seen_station": last_seen_station,
             "observation_count": observation_count,
@@ -55,6 +69,10 @@ class CatalogueStore:
     def get_embedding(self, identity_id: str) -> Optional[np.ndarray]:
         entry = self._catalogue.get(identity_id)
         return entry["embedding"] if entry else None
+
+    def get_local_embedding(self, identity_id: str) -> Optional[np.ndarray]:
+        entry = self._catalogue.get(identity_id)
+        return entry.get("local_embedding") if entry else None
 
     def get_all_identities(self) -> list[str]:
         return list(self._catalogue.keys())
@@ -69,6 +87,14 @@ class CatalogueStore:
             return ids, None
         embeddings = np.array([self._catalogue[i]["embedding"] for i in ids])
         return ids, embeddings
+
+    def get_all_local_embeddings_matrix(self) -> tuple[list[str], Optional[np.ndarray]]:
+        """Return (list_of_ids, NxD matrix) of local flank embeddings."""
+        ids = list(self._catalogue.keys())
+        if not ids:
+            return ids, None
+        local_embeddings = np.array([self._catalogue[i]["local_embedding"] for i in ids])
+        return ids, local_embeddings
 
     def __len__(self) -> int:
         return len(self._catalogue)
@@ -114,12 +140,22 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
         norm = np.linalg.norm(vec)
         if norm > 0:
             vec = vec / norm
+
+        # Deterministic local flank embedding
+        h_loc = hashlib.sha256(f"{tiger['seed']}_flank".encode()).digest()
+        rng_loc = np.random.RandomState(int.from_bytes(h_loc[:4], "big"))
+        vec_loc = rng_loc.randn(embedding_dim).astype(np.float64)
+        norm_loc = np.linalg.norm(vec_loc)
+        if norm_loc > 0:
+            vec_loc = vec_loc / norm_loc
+
         store.add_identity(
             identity_id=tiger["identity_id"],
             embedding=vec.tolist(),
             station_ids=tiger["station_ids"],
             last_seen_station=tiger["last_seen_station"],
             observation_count=tiger["observation_count"],
+            local_embedding=vec_loc.tolist(),
         )
 
     return store
@@ -160,8 +196,8 @@ def generate_candidates(
     catalogue : CatalogueStore, optional
         Identity catalogue to search. Uses demo catalogue if None.
     context : dict, optional
-        Additional context: station_id, latitude, longitude, timestamp.
-        Used to compute spatial/temporal feasibility.
+        Additional context: station_id, latitude, longitude, timestamp,
+        local_embedding. Used to compute spatial/temporal feasibility.
     top_k : int
         Number of top candidates to return.
 
@@ -184,11 +220,20 @@ def generate_candidates(
     if cat_matrix is None:
         return []
 
-    # Compute cosine similarities
+    # Compute cosine similarities for global embedding
     query_vec = np.array(embedding, dtype=np.float64).reshape(1, -1)
     similarities = cosine_similarity(query_vec, cat_matrix)[0]
 
-    # Rank by similarity (descending)
+    # Compute cosine similarities for local flank embedding if available
+    local_emb = ctx.get("local_embedding")
+    local_similarities = None
+    if local_emb is not None:
+        _, local_cat_matrix = catalogue.get_all_local_embeddings_matrix()
+        if local_cat_matrix is not None:
+            local_qvec = np.array(local_emb, dtype=np.float64).reshape(1, -1)
+            local_similarities = cosine_similarity(local_qvec, local_cat_matrix)[0]
+
+    # Rank by global similarity (descending)
     ranked_indices = np.argsort(-similarities)[:top_k]
 
     candidates = []
@@ -197,35 +242,52 @@ def generate_candidates(
         visual_score = float(max(0.0, min(1.0, (similarities[cat_idx] + 1.0) / 2.0)))
         # cosine_similarity returns [-1, 1], map to [0, 1]
 
+        # Local score: from local flank embedding comparison or deterministic fallback
+        if local_similarities is not None:
+            local_score = float(max(0.0, min(1.0, (local_similarities[cat_idx] + 1.0) / 2.0)))
+        else:
+            # Deterministic fallback: visual_score * 0.90 with seeded jitter
+            h = int(hashlib.sha256(f"{image_id}_{identity_id}_local".encode()).hexdigest(), 16)
+            jitter = ((h % 100) / 100.0 * 0.10) - 0.05
+            local_score = float(min(1.0, max(0.0, visual_score * 0.90 + jitter)))
+
         # Quality score: passed in context or default
         quality_score = ctx.get("quality_score", 0.5)
 
         # Spatial feasibility: check if current station is in the tiger's
-        # known station list
+        # known station list, with buffer/village-adjacent metadata weighting
         station_id = ctx.get("station_id")
+        buffer_stations = ctx.get("buffer_stations") or set()
+        is_buffer = (
+            (station_id in buffer_stations)
+            or (isinstance(station_id, str) and ("BUFFER" in station_id.upper() or "VILLAGE" in station_id.upper()))
+            or bool(ctx.get("is_buffer"))
+        )
+
         cat_meta = catalogue.get_metadata(identity_id) or {}
         known_stations = cat_meta.get("station_ids", [])
         if station_id and known_stations:
-            spatial_feasibility = 0.9 if station_id in known_stations else 0.4
+            if station_id in known_stations:
+                spatial_feasibility = 0.85 if is_buffer else 0.90
+            else:
+                spatial_feasibility = 0.30 if is_buffer else 0.40
         elif station_id:
-            spatial_feasibility = 0.5  # unknown history
+            spatial_feasibility = 0.40 if is_buffer else 0.50  # unknown history
         else:
-            spatial_feasibility = 0.5  # missing metadata
+            spatial_feasibility = 0.50  # missing metadata
 
-        # Temporal feasibility: for Phase 1, use a simple proxy —
-        # tigers are more active at dawn/dusk. More sophisticated
-        # temporal analysis would go in a P1/P2 iteration.
+        # Temporal feasibility: factoring diurnal activity and seasonal context
         timestamp = ctx.get("timestamp")
         if timestamp is not None:
             hour = timestamp.hour
             if 4 <= hour <= 8 or 16 <= hour <= 20:
                 temporal_feasibility = 0.85  # dawn/dusk — typical activity
             elif 8 < hour < 16:
-                temporal_feasibility = 0.5   # midday — less typical
+                temporal_feasibility = 0.50   # midday — less typical
             else:
-                temporal_feasibility = 0.7   # night — somewhat typical
+                temporal_feasibility = 0.70   # night — somewhat typical
         else:
-            temporal_feasibility = 0.5  # missing timestamp
+            temporal_feasibility = 0.50  # missing timestamp
 
         # History consistency: based on observation count in catalogue
         obs_count = cat_meta.get("observation_count", 0)
@@ -238,12 +300,12 @@ def generate_candidates(
         else:
             history_consistency = 0.2
 
-        # Compute total evidence using the prototype formula
-        # E = 0.55*V + 0.15*Q + 0.15*S + 0.10*T + 0.05*H
-        # NOTE: this is duplicated in gating.py with configurable weights.
-        # Here we compute a preliminary total for ranking purposes.
+        # Effective visual combining global visual score and local flank matching score
+        eff_visual = 0.75 * visual_score + 0.25 * local_score
+
+        # Compute preliminary total evidence for candidate ranking
         total_evidence = (
-            0.55 * visual_score
+            0.55 * eff_visual
             + 0.15 * quality_score
             + 0.15 * spatial_feasibility
             + 0.10 * temporal_feasibility
@@ -256,6 +318,7 @@ def generate_candidates(
             candidate_identity=identity_id,
             rank=rank_idx + 1,
             visual_score=round(visual_score, 4),
+            local_score=round(local_score, 4),
             quality_score=round(quality_score, 4),
             spatial_feasibility=round(spatial_feasibility, 4),
             temporal_feasibility=round(temporal_feasibility, 4),
@@ -264,3 +327,4 @@ def generate_candidates(
         ))
 
     return candidates
+

@@ -30,6 +30,7 @@ from src.schemas import (
 from src.gating import (
     THRESHOLD_AMBIGUOUS,
     THRESHOLD_TRUSTED,
+    check_calibration,
     compute_evidence,
     make_identity_decision,
 )
@@ -399,3 +400,42 @@ class TestUpdateHistoryInvariant:
                     f"update_history=True but decision={decision.decision} "
                     f"(scores: V={vs:.2f}, Q={qs:.2f}, S={ss:.2f}, T={ts:.2f}, H={hs:.2f})"
                 )
+
+
+class TestCalibration:
+    """Test check_calibration bucketing and ECE computation."""
+
+    def test_calibration_accuracy_and_ece(self):
+        """Check calibration buckets and Expected Calibration Error."""
+        c1 = _make_candidate(0.95, 0.9, 0.9, 0.9, 0.9, image_id="img1", candidate_identity="T01")
+        c2 = _make_candidate(0.20, 0.2, 0.2, 0.2, 0.2, image_id="img2", candidate_identity="T01")
+
+        ctx = {
+            "quality_score": 0.8,
+            "flank_visibility": 0.7,
+            "camera_status": CameraStatus.ACTIVE,
+            "timestamp": __import__("datetime").datetime(2026, 1, 5, 6, 0),
+            "latitude": 21.68,
+            "longitude": 79.29,
+        }
+
+        d1 = make_identity_decision([c1], context=ctx)
+        d2 = make_identity_decision([c2], context=ctx)
+
+        data = [
+            {"decision": d1, "true_identity": "T01", "should_create_observation": True},
+            {"decision": d2, "true_identity": None, "should_create_observation": False},
+        ]
+
+        res = check_calibration(data, n_bins=5)
+        assert res["total_samples"] == 2
+        assert len(res["buckets"]) == 5
+        assert 0.0 <= res["expected_calibration_error"] <= 1.0
+        assert 0.0 <= res["max_calibration_error"] <= 1.0
+
+    def test_calibration_empty_input(self):
+        """Empty input returns 0 samples cleanly without crashing."""
+        res = check_calibration([])
+        assert res["total_samples"] == 0
+        assert res["expected_calibration_error"] == 0.0
+

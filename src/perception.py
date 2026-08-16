@@ -314,3 +314,62 @@ def generate_embedding(crop_path: str) -> list[float]:
     seed = crop_path if crop_path else "unknown_crop"
     logger.debug("Using deterministic demo embedding for %s", seed)
     return _deterministic_embedding(seed)
+
+
+def generate_local_embedding(crop_path: str) -> list[float]:
+    """Generate a feature embedding for a localized flank sub-region crop.
+
+    Attempts to extract and embed the center/flank region (upper-body stripe area)
+    of the crop. Falls back to a deterministic pseudo-embedding seeded from the
+    path and flank sub-region if the file/model is unavailable.
+
+    Parameters
+    ----------
+    crop_path : str
+        Path to the cropped image file.
+
+    Returns
+    -------
+    list[float]
+        Unit-normalized local embedding vector (EMBEDDING_DIM dimensions).
+    """
+    path = Path(crop_path) if crop_path else None
+
+    # Try real model on flank sub-region crop
+    if _HAS_TORCH and _HAS_PIL and path and path.exists():
+        model, transform = _get_resnet_model()
+        if model is not None and transform is not None:
+            try:
+                with PILImage.open(str(path)) as img:
+                    w, h = img.size
+                    # Flank sub-region: center 60% box (flank stripe area)
+                    left = int(w * 0.20)
+                    top = int(h * 0.20)
+                    right = int(w * 0.80)
+                    bottom = int(h * 0.80)
+                    if right > left and bottom > top:
+                        flank_crop = img.crop((left, top, right, bottom)).convert("RGB")
+                    else:
+                        flank_crop = img.convert("RGB")
+
+                    tensor = transform(flank_crop).unsqueeze(0)
+                    with torch.no_grad():
+                        features = model(tensor).squeeze()
+                    vec = features.numpy().astype(np.float64)
+                    if len(vec) > EMBEDDING_DIM:
+                        vec = vec[:EMBEDDING_DIM]
+                    norm = np.linalg.norm(vec)
+                    if norm > 0:
+                        vec = vec / norm
+                    return vec.tolist()
+            except Exception as e:
+                logger.warning(
+                    "ResNet-50 local flank embedding failed for %s: %s — using demo fallback",
+                    crop_path, e,
+                )
+
+    # Demo fallback: deterministic embedding seeded from path + flank tag
+    seed = f"{crop_path}_flank_local" if crop_path else "unknown_flank_local"
+    logger.debug("Using deterministic demo local embedding for %s", seed)
+    return _deterministic_embedding(seed)
+
