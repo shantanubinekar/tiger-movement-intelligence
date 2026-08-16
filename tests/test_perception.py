@@ -221,3 +221,74 @@ class TestEmbedding:
         norm = np.linalg.norm(emb)
         assert abs(norm - 1.0) < 1e-6
 
+
+class TestStripePatternMatching:
+    """Tests for classical CV stripe pattern keypoint matching."""
+
+    def test_stripe_matching_same_tiger_higher_than_different_tiger(self):
+        """Two crops of the SAME real tiger produce a higher local_score
+        than two crops of DIFFERENT real tigers."""
+        from src.perception import match_stripe_keypoints
+
+        img0 = str(DEMO_DIR / "demo_img_000.jpg")  # Tiger T01
+        img1 = str(DEMO_DIR / "demo_img_001.jpg")  # Tiger T01 (same individual)
+        img3 = str(DEMO_DIR / "demo_img_003.jpg")  # Tiger T02 (different individual)
+
+        if not (Path(img0).exists() and Path(img1).exists() and Path(img3).exists()):
+            pytest.skip("Demo images not available")
+
+        same_score = match_stripe_keypoints(img0, img1)
+        diff_score = match_stripe_keypoints(img0, img3)
+
+        assert 0.0 <= same_score <= 1.0
+        assert 0.0 <= diff_score <= 1.0
+        assert same_score > diff_score, (
+            f"Expected same tiger score ({same_score:.4f}) > "
+            f"different tiger score ({diff_score:.4f})"
+        )
+
+    def test_stripe_matching_fallback_on_missing_files(self):
+        """Stripe keypoint matcher falls back deterministically without crashing on missing files."""
+        from src.perception import match_stripe_keypoints
+        score = match_stripe_keypoints("/nonexistent/a.jpg", "/nonexistent/b.jpg")
+        assert isinstance(score, float)
+        assert 0.0 <= score <= 1.0
+
+    def test_match_visualization_output(self):
+        """generate_match_visualization returns valid RGB array on real images."""
+        from src.perception import generate_match_visualization
+        img0 = str(DEMO_DIR / "demo_img_000.jpg")
+        img1 = str(DEMO_DIR / "demo_img_001.jpg")
+
+        if not (Path(img0).exists() and Path(img1).exists()):
+            pytest.skip("Demo images not available")
+
+        vis = generate_match_visualization(img0, img1)
+        assert vis is not None
+        assert isinstance(vis, np.ndarray)
+        assert len(vis.shape) == 3
+        assert vis.shape[2] == 3  # RGB
+
+    def test_stripe_matching_on_real_atrw_dataset(self):
+        """Verify that genuine ATRW real tiger dataset photos produce high stripe match
+        for the same tiger and low match for different tigers."""
+        from src.perception import match_stripe_keypoints
+
+        atrw_dir = Path(__file__).resolve().parents[1] / "data" / "real_tigers"
+        q1 = atrw_dir / "query" / "T_real_01_query.jpg"
+        c1_1 = atrw_dir / "catalogue" / "T_real_01" / "photo1.jpg"
+        c2_1 = atrw_dir / "catalogue" / "T_real_02" / "photo1.jpg"
+
+        if not (q1.exists() and c1_1.exists() and c2_1.exists()):
+            pytest.skip("ATRW dataset not available")
+
+        same_score = match_stripe_keypoints(str(q1), str(c1_1))
+        diff_score = match_stripe_keypoints(str(q1), str(c2_1))
+
+        assert same_score > 0.05, f"Expected non-zero stripe match on same tiger, got {same_score}"
+        assert same_score > diff_score * 5.0, (
+            f"Expected strong margin between same ({same_score:.4f}) and different ({diff_score:.4f})"
+        )
+
+
+

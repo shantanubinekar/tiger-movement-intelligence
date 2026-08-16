@@ -44,6 +44,7 @@ class CatalogueStore:
         last_seen_station: Optional[str] = None,
         observation_count: int = 0,
         local_embedding: Optional[list[float]] = None,
+        image_path: Optional[str] = None,
     ) -> None:
         """Add or update an identity in the catalogue."""
         emb_arr = np.array(embedding, dtype=np.float64)
@@ -64,6 +65,7 @@ class CatalogueStore:
             "station_ids": station_ids or [],
             "last_seen_station": last_seen_station,
             "observation_count": observation_count,
+            "image_path": image_path,
         }
 
     def get_embedding(self, identity_id: str) -> Optional[np.ndarray]:
@@ -73,6 +75,10 @@ class CatalogueStore:
     def get_local_embedding(self, identity_id: str) -> Optional[np.ndarray]:
         entry = self._catalogue.get(identity_id)
         return entry.get("local_embedding") if entry else None
+
+    def get_image_path(self, identity_id: str) -> Optional[str]:
+        entry = self._catalogue.get(identity_id)
+        return entry.get("image_path") if entry else None
 
     def get_all_identities(self) -> list[str]:
         return list(self._catalogue.keys())
@@ -115,6 +121,7 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
             "station_ids": ["STATION_A1", "STATION_B2"],
             "last_seen_station": "STATION_A1",
             "observation_count": 12,
+            "image_path": "data/demo/demo_img_000.jpg",
         },
         {
             "identity_id": "T02",
@@ -122,6 +129,7 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
             "station_ids": ["STATION_B2", "STATION_C3"],
             "last_seen_station": "STATION_C3",
             "observation_count": 8,
+            "image_path": "data/demo/demo_img_003.jpg",
         },
         {
             "identity_id": "T03",
@@ -129,6 +137,7 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
             "station_ids": ["STATION_A1", "STATION_D4_BUFFER"],
             "last_seen_station": "STATION_D4_BUFFER",
             "observation_count": 5,
+            "image_path": "data/demo/demo_img_006.jpg",
         },
     ]
 
@@ -156,6 +165,7 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
             last_seen_station=tiger["last_seen_station"],
             observation_count=tiger["observation_count"],
             local_embedding=vec_loc.tolist(),
+            image_path=tiger.get("image_path"),
         )
 
     return store
@@ -166,7 +176,7 @@ _default_catalogue: Optional[CatalogueStore] = None
 
 
 def get_default_catalogue() -> CatalogueStore:
-    """Get or create the default demo catalogue."""
+    """Get or create the default demo catalogue singleton."""
     global _default_catalogue
     if _default_catalogue is None:
         _default_catalogue = _build_demo_catalogue()
@@ -197,7 +207,8 @@ def generate_candidates(
         Identity catalogue to search. Uses demo catalogue if None.
     context : dict, optional
         Additional context: station_id, latitude, longitude, timestamp,
-        local_embedding. Used to compute spatial/temporal feasibility.
+        local_embedding, crop_path/image_path. Used to compute spatial/temporal feasibility
+        and classical stripe keypoint matching.
     top_k : int
         Number of top candidates to return.
 
@@ -236,20 +247,33 @@ def generate_candidates(
     # Rank by global similarity (descending)
     ranked_indices = np.argsort(-similarities)[:top_k]
 
+    # Check for real crop paths for classical stripe keypoint matching
+    query_crop_path = ctx.get("crop_path") or ctx.get("image_path")
+
     candidates = []
     for rank_idx, cat_idx in enumerate(ranked_indices):
         identity_id = cat_ids[cat_idx]
         visual_score = float(max(0.0, min(1.0, (similarities[cat_idx] + 1.0) / 2.0)))
         # cosine_similarity returns [-1, 1], map to [0, 1]
 
-        # Local score: from local flank embedding comparison or deterministic fallback
-        if local_similarities is not None:
-            local_score = float(max(0.0, min(1.0, (local_similarities[cat_idx] + 1.0) / 2.0)))
-        else:
-            # Deterministic fallback: visual_score * 0.90 with seeded jitter
-            h = int(hashlib.sha256(f"{image_id}_{identity_id}_local".encode()).hexdigest(), 16)
-            jitter = ((h % 100) / 100.0 * 0.10) - 0.05
-            local_score = float(min(1.0, max(0.0, visual_score * 0.90 + jitter)))
+        cat_meta = catalogue.get_metadata(identity_id) or {}
+        cat_img_path = cat_meta.get("image_path")
+
+        # Local score: classical stripe keypoint matching on real crops if available,
+        # else cosine similarity of local embedding, else deterministic fallback
+        local_score = None
+        if query_crop_path and cat_img_path:
+            from src.perception import match_stripe_keypoints
+            local_score = match_stripe_keypoints(str(query_crop_path), str(cat_img_path))
+
+        if local_score is None:
+            if local_similarities is not None:
+                local_score = float(max(0.0, min(1.0, (local_similarities[cat_idx] + 1.0) / 2.0)))
+            else:
+                # Deterministic fallback: visual_score * 0.90 with seeded jitter
+                h = int(hashlib.sha256(f"{image_id}_{identity_id}_local".encode()).hexdigest(), 16)
+                jitter = ((h % 100) / 100.0 * 0.10) - 0.05
+                local_score = float(min(1.0, max(0.0, visual_score * 0.90 + jitter)))
 
         # Quality score: passed in context or default
         quality_score = ctx.get("quality_score", 0.5)

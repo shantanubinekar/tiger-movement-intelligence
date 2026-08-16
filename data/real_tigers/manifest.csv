@@ -1,0 +1,16 @@
+role,individual_id,filename,original_atrw_filename,original_atrw_label
+catalogue,T_real_01,catalogue/T_real_01/photo1.jpg,001703.jpg,0
+catalogue,T_real_01,catalogue/T_real_01/photo2.jpg,002253.jpg,0
+query,T_real_01,query/T_real_01_query.jpg,000384.jpg,0
+catalogue,T_real_02,catalogue/T_real_02/photo1.jpg,001983.jpg,1
+catalogue,T_real_02,catalogue/T_real_02/photo2.jpg,001888.jpg,1
+query,T_real_02,query/T_real_02_query.jpg,000518.jpg,1
+catalogue,T_real_03,catalogue/T_real_03/photo1.jpg,005137.jpg,100
+catalogue,T_real_03,catalogue/T_real_03/photo2.jpg,001477.jpg,100
+query,T_real_03,query/T_real_03_query.jpg,002023.jpg,100
+catalogue,T_real_04,catalogue/T_real_04/photo1.jpg,002568.jpg,106
+catalogue,T_real_04,catalogue/T_real_04/photo2.jpg,003424.jpg,106
+query,T_real_04,query/T_real_04_query.jpg,000427.jpg,106
+catalogue,T_real_05,catalogue/T_real_05/photo1.jpg,000762.jpg,108
+catalogue,T_real_05,catalogue/T_real_05/photo2.jpg,001852.jpg,108
+query,T_real_05,query/T_real_05_query.jpg,001942.jpg,108

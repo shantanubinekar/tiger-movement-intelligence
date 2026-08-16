@@ -29,9 +29,19 @@ from src.schemas import AlertType, Observation
 class MovementConfig:
     """Configurable thresholds for movement deviation detection.
 
+    Thresholds conform to the SIH problem statement requirements:
+    - Core zone deviation threshold: 15-20 sq km (default: 17.5 sq km)
+    - Buffer zone deviation threshold: 5 km (default: 5.0 km)
+
     These are prototype heuristics (PROJECT_CONTRACT.md Section 12),
     NOT scientifically validated parameters.
     """
+
+    # Core zone area deviation threshold (sq km) — SIH problem statement benchmark (15-20 sq km)
+    core_zone_deviation_sqkm: float = 17.5
+
+    # Buffer zone distance deviation threshold (km) — SIH problem statement benchmark (5 km)
+    buffer_zone_deviation_km: float = 5.0
 
     # Distance threshold for UNUSUAL_TRAVEL (km)
     unusual_distance_km: float = 30.0
