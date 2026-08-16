@@ -1,9 +1,0 @@
-image_id,station_id,latitude,longitude,timestamp,camera_status,data_mode
-demo_img_000,STATION_A1,21.680,79.290,2026-01-05T06:12:00,active,demo
-demo_img_001,STATION_A1,21.681,79.291,2026-01-06T18:40:00,active,demo
-demo_img_002,STATION_B2,21.702,79.315,2026-01-07T05:55:00,active,demo
-demo_img_003,STATION_B2,21.703,79.316,2026-01-09T20:10:00,relocated,demo
-demo_img_004,STATION_C3,21.664,79.278,2026-01-10T04:30:00,inactive,demo
-demo_img_005,STATION_C3,21.665,79.279,2026-01-22T07:05:00,active,demo
-demo_img_006,STATION_D4_BUFFER,21.640,79.260,2026-01-23T02:15:00,active,demo
-demo_img_007,STATION_A1,21.680,79.290,2026-02-14T06:00:00,active,demo
