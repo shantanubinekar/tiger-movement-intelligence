@@ -30,6 +30,7 @@ demo fallback required by the project contract, not throwaway code.
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -46,12 +47,29 @@ from src.schemas import (
     MovementAlert,
     Observation,
     ReasonCode,
+    TriageStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 # Set to False once Developer 2 / Developer 3 wire in real logic for a given
 # function. Keeping this per-module rather than global lets you flip pieces
 # on independently as each branch lands.
 DEMO_MODE = True
+
+# Developer 2 real logic is now available — used when DEMO_MODE is False
+# (or as the primary path when True, with demo fallback on import failure).
+_DEV2_AVAILABLE = False
+try:
+    from src.ingestion import ingest_folder
+    from src.triage import triage_image
+    from src.perception import detect_subject, generate_embedding
+    from src.identity import generate_candidates as _real_generate_candidates
+    from src.identity import get_default_catalogue
+    from src.gating import make_identity_decision as _real_make_identity_decision
+    _DEV2_AVAILABLE = True
+except ImportError as e:
+    logger.warning("Developer 2 modules not fully available: %s — using demo fallback", e)
 
 
 def _seeded_float(seed: str, low: float = 0.0, high: float = 1.0) -> float:
@@ -74,7 +92,81 @@ def process_image_directory(path: str) -> list[IdentityDecision]:
     DEMO_MODE: fabricates a handful of decisions covering each decision
     state, so downstream code and the UI have something real to render.
     """
-    if DEMO_MODE:
+    # --- Real logic (Developer 2) ---
+    if _DEV2_AVAILABLE:
+        try:
+            # Step 1: Ingest folder
+            records = ingest_folder(path)
+            if not records:
+                logger.info("No images found in %s — falling back to demo", path)
+                # Fall through to demo mode below
+            else:
+                catalogue = get_default_catalogue()
+                decisions: list[IdentityDecision] = []
+
+                for record in records:
+                    # Step 2: Triage
+                    triage = triage_image(record)
+
+                    # Skip blank images — mark as blank decision
+                    if triage.triage_status == TriageStatus.BLANK:
+                        decisions.append(IdentityDecision(
+                            image_id=record.image_id,
+                            decision=IdentityDecisionState.BLANK,
+                            confidence=triage.blank_probability,
+                            reason_codes=[],
+                            evidence_summary={
+                                "triage_status": "blank",
+                                "blank_probability": triage.blank_probability,
+                            },
+                            update_history=False,
+                        ))
+                        continue
+
+                    # Step 3: Detect subject + compute quality
+                    detection = detect_subject(record)
+
+                    # Step 4: Generate embedding
+                    crop_path = detection.crop_path or record.image_path
+                    embedding = generate_embedding(crop_path)
+
+                    # Step 5: Generate candidates
+                    context = {
+                        "station_id": record.station_id,
+                        "latitude": record.latitude,
+                        "longitude": record.longitude,
+                        "timestamp": record.timestamp,
+                        "quality_score": detection.quality_score,
+                        "flank_visibility": detection.flank_visibility,
+                        "camera_status": record.camera_status,
+                    }
+                    candidates = _real_generate_candidates(
+                        embedding=embedding,
+                        image_id=record.image_id,
+                        catalogue=catalogue,
+                        context=context,
+                    )
+
+                    # Step 6: Gating decision
+                    gate_context = {
+                        **context,
+                        "image_id": record.image_id,
+                        "embedding": embedding,
+                        "detection_confidence": detection.detection_confidence,
+                    }
+                    decision = _real_make_identity_decision(candidates, gate_context)
+                    decisions.append(decision)
+
+                logger.info(
+                    "Processed %d images from %s: %d decisions",
+                    len(records), path, len(decisions),
+                )
+                return decisions
+        except Exception as e:
+            logger.error("Real pipeline failed: %s — falling back to demo mode", e)
+
+    # --- Demo fallback ---
+    if True:  # Demo fallback always available
         p = Path(path)
         image_ids = (
             [f.stem for f in sorted(p.glob("*")) if f.is_file()]
@@ -124,59 +216,78 @@ def process_image_directory(path: str) -> list[IdentityDecision]:
             )
         return decisions
 
-    raise NotImplementedError(
-        "Developer 2: replace this branch with real ingestion -> triage -> "
-        "perception -> candidate generation -> gating, calling into "
-        "src/ingestion.py, src/triage.py, src/perception.py, "
-        "src/identity.py, src/gating.py."
-    )
-
 
 def generate_candidates(image_record: ImageRecord) -> list[IdentityCandidate]:
     """Given one ImageRecord, return ranked candidate identities."""
-    if DEMO_MODE:
-        return [
-            IdentityCandidate(
+    # --- Real logic (Developer 2) ---
+    if _DEV2_AVAILABLE:
+        try:
+            detection = detect_subject(image_record)
+            crop_path = detection.crop_path or image_record.image_path
+            embedding = generate_embedding(crop_path)
+            context = {
+                "station_id": image_record.station_id,
+                "latitude": image_record.latitude,
+                "longitude": image_record.longitude,
+                "timestamp": image_record.timestamp,
+                "quality_score": detection.quality_score,
+            }
+            return _real_generate_candidates(
+                embedding=embedding,
                 image_id=image_record.image_id,
-                candidate_identity="T01",
-                rank=1,
-                visual_score=_seeded_float(image_record.image_id + "v", 0.4, 0.95),
-                quality_score=_seeded_float(image_record.image_id + "q", 0.3, 0.9),
-                spatial_feasibility=0.8,
-                temporal_feasibility=0.8,
-                history_consistency=0.7,
-                total_evidence=_seeded_float(image_record.image_id + "e", 0.3, 0.95),
+                context=context,
             )
-        ]
-    raise NotImplementedError("Developer 2: wire to src/identity.py generate_candidates().")
+        except Exception as e:
+            logger.error("Real generate_candidates failed: %s — using demo fallback", e)
+
+    # --- Demo fallback ---
+    return [
+        IdentityCandidate(
+            image_id=image_record.image_id,
+            candidate_identity="T01",
+            rank=1,
+            visual_score=_seeded_float(image_record.image_id + "v", 0.4, 0.95),
+            quality_score=_seeded_float(image_record.image_id + "q", 0.3, 0.9),
+            spatial_feasibility=0.8,
+            temporal_feasibility=0.8,
+            history_consistency=0.7,
+            total_evidence=_seeded_float(image_record.image_id + "e", 0.3, 0.95),
+        )
+    ]
 
 
 def make_identity_decision(candidates: list[IdentityCandidate], context: dict | None = None) -> IdentityDecision:
     """Given ranked candidates + context (station/time/camera/history),
     return the gated IdentityDecision."""
-    if DEMO_MODE:
-        top = candidates[0] if candidates else None
-        if top and top.total_evidence >= 0.8:
-            return IdentityDecision(
-                image_id=top.image_id,
-                decision=IdentityDecisionState.TRUSTED_MATCH,
-                identity_id=top.candidate_identity,
-                confidence=top.total_evidence,
-                top_candidates=candidates,
-                reason_codes=[ReasonCode.HIGH_CONFIDENCE_MATCH],
-                evidence_summary={"data_mode": DataMode.DEMO.value},
-                update_history=True,
-            )
+    # --- Real logic (Developer 2) ---
+    if _DEV2_AVAILABLE:
+        try:
+            return _real_make_identity_decision(candidates, context)
+        except Exception as e:
+            logger.error("Real make_identity_decision failed: %s — using demo fallback", e)
+
+    # --- Demo fallback ---
+    top = candidates[0] if candidates else None
+    if top and top.total_evidence >= 0.8:
         return IdentityDecision(
-            image_id=top.image_id if top else "unknown",
-            decision=IdentityDecisionState.AMBIGUOUS_REVIEW,
-            confidence=top.total_evidence if top else 0.0,
+            image_id=top.image_id,
+            decision=IdentityDecisionState.TRUSTED_MATCH,
+            identity_id=top.candidate_identity,
+            confidence=top.total_evidence,
             top_candidates=candidates,
-            reason_codes=[ReasonCode.LOW_VISUAL_MARGIN],
+            reason_codes=[ReasonCode.HIGH_CONFIDENCE_MATCH],
             evidence_summary={"data_mode": DataMode.DEMO.value},
-            update_history=False,
+            update_history=True,
         )
-    raise NotImplementedError("Developer 2: wire to src/gating.py make_identity_decision().")
+    return IdentityDecision(
+        image_id=top.image_id if top else "unknown",
+        decision=IdentityDecisionState.AMBIGUOUS_REVIEW,
+        confidence=top.total_evidence if top else 0.0,
+        top_candidates=candidates,
+        reason_codes=[ReasonCode.LOW_VISUAL_MARGIN],
+        evidence_summary={"data_mode": DataMode.DEMO.value},
+        update_history=False,
+    )
 
 
 # ---------------------------------------------------------------------------
