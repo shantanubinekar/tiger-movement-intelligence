@@ -1,0 +1,28 @@
+# Core — required for schemas.py / pipeline.py / tests to run at all
+pydantic>=2.0
+pytest>=8.0
+
+# Frontend (Developer 1)
+streamlit>=1.35
+
+# Perception / identity (Developer 2) — install what you can get working
+# quickly; every step has a deterministic fallback if these fail to import.
+numpy
+pandas
+Pillow
+opencv-python-headless
+scikit-learn
+torch
+torchvision
+
+# Movement / evaluation display (Developer 3 / Developer 1)
+plotly
+
+# Optional — only if they install quickly and reliably (per contract
+# Section 16). Do not block P0 on these.
+# open_clip_torch
+# faiss-cpu
+# geopandas
+# shapely
+# pyproj
+# folium
