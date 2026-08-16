@@ -212,7 +212,11 @@ def update_trusted_history(
         timestamp=meta.get("timestamp"),
         identity_confidence=decision.confidence,
         observation_status=ObservationStatus.TRUSTED,
-        camera_status=CameraStatus(meta.get("camera_status", "unknown")),
+        camera_status=(
+            CameraStatus(meta["camera_status"])
+            if meta.get("camera_status") and isinstance(meta.get("camera_status"), (str, CameraStatus))
+            else CameraStatus.UNKNOWN
+        ),
         quality_score=meta.get("quality_score", 0.0),
     )
 
