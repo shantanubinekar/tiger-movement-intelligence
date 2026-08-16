@@ -30,6 +30,8 @@ if "alerts" not in st.session_state:
     st.session_state.alerts = []
 if "eval_reports" not in st.session_state:
     st.session_state.eval_reports = []
+if "human_reviews" not in st.session_state:
+    st.session_state.human_reviews = {}
 if "processed" not in st.session_state:
     st.session_state.processed = False
 

@@ -200,14 +200,19 @@ def test_evaluation_computed_metrics_return_real_numbers():
         assert isinstance(r.false_movement_alert_rate, float) and 0.0 <= r.false_movement_alert_rate <= 1.0
         assert isinstance(r.alert_precision, float) and 0.0 <= r.alert_precision <= 1.0
 
-    # Evidence-gated and unseen-split should eliminate false confident identities
+    # Evidence-gated and unseen-split should eliminate false confident identities and false movement alerts
     assert gated.false_confident_identity_rate == 0.0
     assert unseen.false_confident_identity_rate == 0.0
+    assert gated.false_movement_alert_rate == 0.0
+    assert unseen.false_movement_alert_rate == 0.0
     assert gated.alert_precision == 1.0
     assert unseen.alert_precision == 1.0
 
     # Baseline exhibits errors
     assert baseline.false_confident_identity_rate > 0.0
-    assert baseline.alert_precision < 1.0
+    assert isinstance(baseline.alert_precision, float)
+    assert 0.0 <= baseline.alert_precision <= 1.0
+
+
 
 

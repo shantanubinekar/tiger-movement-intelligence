@@ -75,6 +75,63 @@ class TestQualityFeatures:
                      "crop_area_fraction", "flank_visibility"]:
             assert 0.0 <= features[key] <= 1.0
 
+    def test_real_vs_fallback_quality_scoring(self, tmp_path):
+        """Confirm real image features (Laplacian blur, brightness/contrast)
+        differ based on pixel data and fall back cleanly when file is missing or corrupt."""
+        import cv2
+
+        # 1. Create a sharp image (high gradient edges)
+        sharp_img = np.zeros((200, 200, 3), dtype=np.uint8)
+        sharp_img[::4, :] = 255
+        sharp_path = tmp_path / "sharp.jpg"
+        cv2.imwrite(str(sharp_path), sharp_img)
+
+        # 2. Create a blurred version of the same image
+        blur_img = cv2.GaussianBlur(sharp_img, (21, 21), 0)
+        blur_path = tmp_path / "blurred.jpg"
+        cv2.imwrite(str(blur_path), blur_img)
+
+        # 3. Create a bright image
+        bright_img = np.full((200, 200, 3), 240, dtype=np.uint8)
+        bright_path = tmp_path / "bright.jpg"
+        cv2.imwrite(str(bright_path), bright_img)
+
+        sharp_feat = _compute_quality_features(str(sharp_path))
+        blur_feat = _compute_quality_features(str(blur_path))
+        bright_feat = _compute_quality_features(str(bright_path))
+
+        # Real OpenCV Laplacian variance should make sharp image have higher blur score than blurred image
+        assert sharp_feat["blur_score"] > blur_feat["blur_score"], (
+            f"Expected sharp blur_score ({sharp_feat['blur_score']}) > blurred ({blur_feat['blur_score']})"
+        )
+
+        # Real brightness feature should reflect pixel intensity
+        assert bright_feat["brightness"] > blur_feat["brightness"]
+
+        # 4. Fallback test: missing image path
+        missing_record = ImageRecord(
+            image_id="img_missing_fallback",
+            image_path=str(tmp_path / "does_not_exist.jpg"),
+            file_hash="missing_hash",
+            data_mode=DataMode.DEMO,
+        )
+        missing_detection = detect_subject(missing_record)
+        assert missing_detection.crop_path is None
+        assert 0.0 <= missing_detection.quality_score <= 1.0
+
+        # 5. Fallback test: corrupt file (not an image)
+        corrupt_path = tmp_path / "corrupt.jpg"
+        corrupt_path.write_bytes(b"not a valid image content")
+        corrupt_record = ImageRecord(
+            image_id="img_corrupt_fallback",
+            image_path=str(corrupt_path),
+            file_hash="corrupt_hash",
+            data_mode=DataMode.DEMO,
+        )
+        corrupt_detection = detect_subject(corrupt_record)
+        assert 0.0 <= corrupt_detection.quality_score <= 1.0
+
+
 
 class TestDetection:
     """detect_subject produces valid DetectionRecord."""

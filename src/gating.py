@@ -62,7 +62,10 @@ THRESHOLD_AMBIGUOUS = 0.55   # this <= E < THRESHOLD_TRUSTED -> ambiguous_review
 # E < THRESHOLD_AMBIGUOUS -> unknown (or rejected)
 
 # Minimum quality score below which we force insufficient_evidence
-MIN_QUALITY_FOR_DECISION = 0.15
+QUALITY_HARD_MIN = 0.20
+
+# Minimum quality score below which POOR_IMAGE_QUALITY reason code is flagged
+MIN_QUALITY_FOR_DECISION = 0.40
 
 # Minimum visual margin between top-1 and top-2 candidates
 # If margin is too small, the match is ambiguous even if score is high
@@ -77,47 +80,66 @@ UNKNOWN_SIMILARITY_THRESHOLD = 0.70
 
 class UnknownStore:
     """Temporary storage for unknown-individual embeddings.
-    If several are mutually similar, assigns provisional IDs (NEW-001 etc.).
+    If several are mutually similar (cosine similarity > 0.7), assigns and groups
+    under provisional IDs (NEW-001, NEW-002, ...).
     These are NOT added to the trusted catalogue."""
 
-    def __init__(self):
+    def __init__(self, similarity_threshold: float = UNKNOWN_SIMILARITY_THRESHOLD):
         self._unknowns: list[dict] = []
         self._next_id = 1
+        self.similarity_threshold = similarity_threshold
 
-    def add_unknown(self, image_id: str, embedding: list[float]) -> Optional[str]:
+    def add_unknown(self, image_id: str, embedding: list[float]) -> str:
         """Store an unknown embedding and check if it clusters with
-        existing unknowns. Returns a provisional ID if a cluster is found."""
+        existing unknowns. If a new unknown embedding has cosine similarity > 0.7
+        with an existing unknown cluster, it is grouped under that cluster's
+        provisional ID (NEW-001, NEW-002, ...) instead of creating a new one each time.
+        Returns the assigned provisional ID."""
         vec = np.array(embedding, dtype=np.float64).reshape(1, -1)
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec = vec / norm
 
         # Check similarity with existing unknowns
+        best_sim = -1.0
+        best_prov_id = None
+
         for entry in self._unknowns:
             existing_vec = np.array(entry["embedding"], dtype=np.float64).reshape(1, -1)
-            sim = cosine_similarity(vec, existing_vec)[0][0]
-            if sim >= UNKNOWN_SIMILARITY_THRESHOLD:
-                # Similar to an existing unknown — assign same provisional ID
-                prov_id = entry.get("provisional_id")
-                if prov_id is None:
-                    prov_id = f"NEW-{self._next_id:03d}"
-                    self._next_id += 1
-                    entry["provisional_id"] = prov_id
-                self._unknowns.append({
-                    "image_id": image_id,
-                    "embedding": embedding,
-                    "provisional_id": prov_id,
-                })
-                logger.info(
-                    "Unknown %s clusters with existing unknown -> provisional ID %s",
-                    image_id, prov_id,
-                )
-                return prov_id
+            e_norm = np.linalg.norm(existing_vec)
+            if e_norm > 0:
+                existing_vec = existing_vec / e_norm
+            sim = float(cosine_similarity(vec, existing_vec)[0][0])
+            if sim > self.similarity_threshold and sim > best_sim:
+                best_sim = sim
+                best_prov_id = entry.get("provisional_id")
 
-        # No match — store as new unknown
+        if best_prov_id is not None:
+            # Group under existing cluster's provisional ID
+            self._unknowns.append({
+                "image_id": image_id,
+                "embedding": embedding,
+                "provisional_id": best_prov_id,
+            })
+            logger.info(
+                "Unknown %s clusters with existing unknown (sim=%.3f) -> provisional ID %s",
+                image_id, best_sim, best_prov_id,
+            )
+            return best_prov_id
+
+        # No match above threshold — create a new cluster provisional ID
+        prov_id = f"NEW-{self._next_id:03d}"
+        self._next_id += 1
         self._unknowns.append({
             "image_id": image_id,
             "embedding": embedding,
-            "provisional_id": None,
+            "provisional_id": prov_id,
         })
-        return None
+        logger.info(
+            "New unknown cluster created for %s -> provisional ID %s",
+            image_id, prov_id,
+        )
+        return prov_id
 
     def get_provisional_ids(self) -> dict[str, list[str]]:
         """Return mapping of provisional_id -> list of image_ids."""
@@ -246,7 +268,7 @@ def _check_severe_failure(context: Optional[dict] = None) -> bool:
 
     # Severe: quality too low for any meaningful analysis
     quality = ctx.get("quality_score", 0.5)
-    if quality < 0.05:
+    if quality < QUALITY_HARD_MIN:
         return True
 
     # Severe: missing both location and timestamp
@@ -297,9 +319,15 @@ def make_identity_decision(
     # If no candidates at all, this is unknown
     if not candidates:
         image_id = ctx.get("image_id", "unknown")
+        identity_id = None
+        embedding = ctx.get("embedding")
+        if embedding:
+            identity_id = _unknown_store.add_unknown(image_id, embedding)
+
         return IdentityDecision(
             image_id=image_id,
             decision=IdentityDecisionState.UNKNOWN,
+            identity_id=identity_id,
             confidence=0.0,
             reason_codes=[ReasonCode.LOW_VISUAL_MARGIN],
             evidence_summary={
@@ -323,7 +351,7 @@ def make_identity_decision(
         if camera_status == CameraStatus.INACTIVE or camera_status == "inactive":
             reason_codes.append(ReasonCode.CAMERA_RELOCATED)
         quality = ctx.get("quality_score", 0.5)
-        if quality < 0.05:
+        if quality < QUALITY_HARD_MIN:
             reason_codes.append(ReasonCode.POOR_IMAGE_QUALITY)
         if not reason_codes:
             reason_codes.append(ReasonCode.MISSING_LOCATION)
