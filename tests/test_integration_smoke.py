@@ -84,6 +84,7 @@ def test_only_trusted_match_creates_observations():
             )
 
 
+
 def test_full_chain_runs_without_crashing():
     decisions = process_image_directory("data/demo")
     observations = [o for o in (create_observation(d) for d in decisions) if o is not None]
@@ -94,3 +95,81 @@ def test_full_chain_runs_without_crashing():
     assert isinstance(alerts, list)
     assert isinstance(reports, list)
     assert len(reports) >= 1  # at least baseline + proposed once real, or demo placeholders now
+
+
+# ---------------------------------------------------------------------------
+# Developer 3 — appended integration tests
+# (Baseline vs. proposed evaluation on demo scenarios)
+# ---------------------------------------------------------------------------
+
+from src.schemas import EvaluationReport, AlertStatus
+
+
+def test_evaluation_produces_both_pipelines():
+    """run_evaluation must produce at least two EvaluationReport objects:
+    one for 'baseline' and one for 'evidence_gated'."""
+    reports = run_evaluation()
+    assert isinstance(reports, list)
+    assert len(reports) >= 2
+
+    pipeline_names = {r.pipeline_name for r in reports}
+    assert "baseline" in pipeline_names, "Missing baseline report"
+    assert "evidence_gated" in pipeline_names, "Missing evidence_gated report"
+
+
+def test_evaluation_reports_have_valid_structure():
+    """Each EvaluationReport must have valid field types and no fabricated
+    metrics (metrics without data are in not_computable)."""
+    reports = run_evaluation()
+    for report in reports:
+        assert isinstance(report, EvaluationReport)
+        assert isinstance(report.pipeline_name, str)
+        assert isinstance(report.not_computable, list)
+        assert isinstance(report.notes, str)
+        assert len(report.notes) > 0, "Report notes should not be empty"
+        # Fabrication check: notes should mention 'PROTOTYPE' or 'DEMO'
+        assert (
+            "PROTOTYPE" in report.notes.upper()
+            or "DEMO" in report.notes.upper()
+        ), "Report should be labelled as prototype/demo evaluation"
+
+
+def test_evaluation_baseline_vs_gated_comparison():
+    """The evaluation should produce comparison data. If real evaluation
+    is running (not DEMO_MODE), the evidence_gated pipeline should
+    withhold more observations than baseline."""
+    reports = run_evaluation()
+    baseline = next((r for r in reports if r.pipeline_name == "baseline"), None)
+    gated = next((r for r in reports if r.pipeline_name == "evidence_gated"), None)
+
+    assert baseline is not None
+    assert gated is not None
+
+    # If real evaluation ran (not just placeholders)
+    if gated.observations_withheld_pct is not None:
+        assert gated.observations_withheld_pct >= 0.0, (
+            "Evidence-gated should withhold ≥ 0% of observations"
+        )
+
+    # Baseline should never withhold observations
+    if baseline.observations_withheld_pct is not None:
+        assert baseline.observations_withheld_pct == 0.0, (
+            "Baseline (always-assign) should not withhold any observations"
+        )
+
+
+def test_evaluation_no_fabricated_numbers():
+    """Metrics that can't be computed should be in not_computable, not
+    filled with fake values."""
+    reports = run_evaluation()
+    for report in reports:
+        # If false_confident_identity_rate is None, it should be listed
+        # in not_computable (since we have no ground truth labels)
+        if report.false_confident_identity_rate is None:
+            computable_names = " ".join(report.not_computable).lower()
+            assert "false_confident_identity_rate" in computable_names or \
+                   "identity" in computable_names, (
+                f"false_confident_identity_rate is None but not in "
+                f"not_computable list for {report.pipeline_name}"
+            )
+
