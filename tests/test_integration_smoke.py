@@ -214,5 +214,18 @@ def test_evaluation_computed_metrics_return_real_numbers():
     assert 0.0 <= baseline.alert_precision <= 1.0
 
 
+def test_evaluation_reports_to_csv_export():
+    """Verify that evaluation_reports_to_csv produces valid non-empty CSV output with headers."""
+    from src.evaluation import evaluation_reports_to_csv, run_evaluation
+    reports = run_evaluation()
+    csv_str = evaluation_reports_to_csv(reports)
+    assert isinstance(csv_str, str)
+    assert "pipeline_name,coverage" in csv_str
+    assert "baseline" in csv_str
+    assert "evidence_gated" in csv_str
+    assert "proposed_unseen_split" in csv_str
+
+
+
 
 

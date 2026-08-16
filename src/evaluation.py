@@ -694,3 +694,54 @@ def run_evaluation(
     )
 
     return [baseline_report, proposed_report, unseen_split_report]
+
+
+def evaluation_reports_to_csv(reports: list[EvaluationReport]) -> str:
+    """Format existing evaluation reports into CSV string for export.
+
+    Parameters
+    ----------
+    reports : list[EvaluationReport]
+        List of computed EvaluationReport objects.
+
+    Returns
+    -------
+    str
+        CSV-formatted string suitable for st.download_button or file export.
+    """
+    import csv
+    import io
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    headers = [
+        "pipeline_name",
+        "coverage",
+        "abstention_review_rate",
+        "observations_withheld_pct",
+        "false_confident_identity_rate",
+        "false_movement_alert_rate",
+        "alert_precision",
+        "artefact_suppression_rate",
+        "not_computable",
+        "notes",
+    ]
+    writer.writerow(headers)
+
+    for r in reports:
+        writer.writerow([
+            r.pipeline_name,
+            f"{r.coverage:.4f}" if r.coverage is not None else "",
+            f"{r.abstention_review_rate:.4f}" if r.abstention_review_rate is not None else "",
+            f"{r.observations_withheld_pct:.2f}" if r.observations_withheld_pct is not None else "",
+            f"{r.false_confident_identity_rate:.4f}" if r.false_confident_identity_rate is not None else "",
+            f"{r.false_movement_alert_rate:.4f}" if r.false_movement_alert_rate is not None else "",
+            f"{r.alert_precision:.4f}" if r.alert_precision is not None else "",
+            f"{r.artefact_suppression_rate:.4f}" if r.artefact_suppression_rate is not None else "",
+            ";".join(r.not_computable),
+            r.notes,
+        ])
+
+    return output.getvalue()
+
