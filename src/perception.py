@@ -97,81 +97,121 @@ def _get_resnet_model():
 # Quality feature computation
 # ---------------------------------------------------------------------------
 
+def _seeded_quality_features(seed: str) -> dict[str, float]:
+    """Demo fallback: deterministic quality from seed string hash."""
+    h = int(hashlib.sha256(seed.encode()).hexdigest(), 16)
+    return {
+        "blur_score": round(((h >> 0) % 100) / 100.0 * 0.5 + 0.3, 4),
+        "brightness": round(((h >> 8) % 100) / 100.0 * 0.4 + 0.3, 4),
+        "contrast": round(((h >> 16) % 100) / 100.0 * 0.4 + 0.3, 4),
+        "crop_area_fraction": 0.7,
+        "flank_visibility": round(((h >> 24) % 100) / 100.0 * 0.5 + 0.2, 4),
+    }
+
+
+def _compute_quality_features_raw(image_path: str) -> Optional[dict[str, float]]:
+    """Compute image quality features from a real image file using OpenCV or PIL.
+    Returns dict with keys: blur_score, brightness, contrast, crop_area_fraction,
+    flank_visibility, or None if image loading / processing fails.
+    All values normalized to [0, 1].
+    """
+    if not image_path:
+        return None
+
+    path = Path(image_path)
+    if not path.is_file():
+        return None
+
+    if _HAS_CV2:
+        try:
+            img = cv2.imread(str(path))
+            if img is not None and img.size > 0:
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                h, w = gray.shape
+                if h > 0 and w > 0:
+                    # Blur score: Laplacian variance — higher means sharper
+                    lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+                    # Normalize: typical camera-trap values range 0-500+
+                    blur_score = min(1.0, max(0.0, lap_var / 500.0))
+
+                    # Brightness: mean pixel intensity / 255
+                    brightness = min(1.0, max(0.0, float(gray.mean()) / 255.0))
+
+                    # Contrast: std of pixel intensities / 128 (half of max range)
+                    contrast = min(1.0, max(0.0, float(gray.std()) / 128.0))
+
+                    # Crop area fraction: ratio of image dimensions to standard camera trap (640x480)
+                    standard_area = 640.0 * 480.0
+                    actual_area = float(h * w)
+                    crop_area_fraction = min(1.0, max(0.0, actual_area / standard_area))
+
+                    # Flank visibility proxy: percentage of center region with edge features
+                    edges = cv2.Canny(gray, 50, 150)
+                    edge_fraction = float(np.count_nonzero(edges)) / float(h * w)
+                    center_h, center_w = h // 4, w // 4
+                    center_crop = edges[center_h:3*center_h, center_w:3*center_w]
+                    if center_crop.size > 0:
+                        center_edge_fraction = float(np.count_nonzero(center_crop)) / float(center_crop.size)
+                    else:
+                        center_edge_fraction = edge_fraction
+                    flank_visibility = min(1.0, max(0.0, center_edge_fraction * 5.0))
+
+                    return {
+                        "blur_score": round(blur_score, 4),
+                        "brightness": round(brightness, 4),
+                        "contrast": round(contrast, 4),
+                        "crop_area_fraction": round(crop_area_fraction, 4),
+                        "flank_visibility": round(flank_visibility, 4),
+                    }
+        except Exception as e:
+            logger.warning("CV2 quality computation failed for %s: %s", image_path, e)
+
+    if _HAS_PIL:
+        try:
+            with PILImage.open(str(path)) as img:
+                gray_img = img.convert("L")
+                arr = np.array(gray_img, dtype=np.float64)
+                if arr.size > 0 and arr.shape[0] > 0 and arr.shape[1] > 0:
+                    h, w = arr.shape
+                    brightness = min(1.0, max(0.0, float(arr.mean()) / 255.0))
+                    contrast = min(1.0, max(0.0, float(arr.std()) / 128.0))
+                    crop_area_fraction = min(1.0, max(0.0, float(arr.size) / (640.0 * 480.0)))
+
+                    blur_score = 0.5
+                    flank_visibility = 0.5
+                    if h > 1 and w > 1:
+                        dx = np.diff(arr, axis=1)
+                        dy = np.diff(arr, axis=0)
+                        grad_mag = np.sqrt(dx[:-1, :] ** 2 + dy[:, :-1] ** 2)
+                        blur_score = min(1.0, max(0.0, float(grad_mag.std()) / 50.0))
+                        flank_visibility = min(1.0, max(0.0, float(grad_mag.mean()) / 30.0))
+
+                    return {
+                        "blur_score": round(blur_score, 4),
+                        "brightness": round(brightness, 4),
+                        "contrast": round(contrast, 4),
+                        "crop_area_fraction": round(crop_area_fraction, 4),
+                        "flank_visibility": round(flank_visibility, 4),
+                    }
+        except Exception as e:
+            logger.warning("PIL quality computation failed for %s: %s", image_path, e)
+
+    return None
+
+
 def _compute_quality_features(image_path: str) -> dict[str, float]:
     """Compute image quality features. Returns dict with keys:
     blur_score, brightness, contrast, crop_area_fraction, flank_visibility.
     All values normalized to [0, 1].
+
+    If a real image file exists and can be loaded, computes real quality features
+    (actual Laplacian variance for blur, actual mean/std for brightness/contrast).
+    Falls back to deterministic seeded quality if missing or unreadable.
     """
-    features = {
-        "blur_score": 0.5,
-        "brightness": 0.5,
-        "contrast": 0.5,
-        "crop_area_fraction": 0.5,
-        "flank_visibility": 0.5,
-    }
-
-    if _HAS_CV2:
-        try:
-            img = cv2.imread(image_path)
-            if img is None:
-                return features
-
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            h, w = gray.shape
-
-            # Blur score: Laplacian variance — higher means sharper
-            lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-            # Normalize: typical camera-trap values range 0-5000+
-            features["blur_score"] = min(1.0, lap_var / 500.0)
-
-            # Brightness: mean pixel intensity / 255
-            features["brightness"] = float(gray.mean()) / 255.0
-
-            # Contrast: std of pixel intensities / 128 (half of max range)
-            features["contrast"] = min(1.0, float(gray.std()) / 128.0)
-
-            # Crop area fraction: ratio of image dimensions to a "standard"
-            # camera-trap resolution (640x480). Larger = better.
-            standard_area = 640 * 480
-            actual_area = h * w
-            features["crop_area_fraction"] = min(1.0, actual_area / standard_area)
-
-            # Flank visibility proxy: percentage of image that has high-gradient
-            # edges (rough proxy for visible stripe pattern area)
-            edges = cv2.Canny(gray, 50, 150)
-            edge_fraction = np.count_nonzero(edges) / (h * w)
-            # More edges in center region suggests subject with visible features
-            center_h, center_w = h // 4, w // 4
-            center_crop = edges[center_h:3*center_h, center_w:3*center_w]
-            if center_crop.size > 0:
-                center_edge_fraction = np.count_nonzero(center_crop) / center_crop.size
-            else:
-                center_edge_fraction = edge_fraction
-            features["flank_visibility"] = min(1.0, center_edge_fraction * 5.0)
-
-        except Exception as e:
-            logger.warning("Quality feature computation failed for %s: %s", image_path, e)
-
-    elif _HAS_PIL:
-        try:
-            img = PILImage.open(image_path).convert("L")
-            arr = np.array(img, dtype=np.float64)
-
-            features["brightness"] = float(arr.mean()) / 255.0
-            features["contrast"] = min(1.0, float(arr.std()) / 128.0)
-            features["crop_area_fraction"] = min(1.0, arr.size / (640 * 480))
-
-            # Simple blur approximation using gradient magnitude
-            if arr.shape[0] > 1 and arr.shape[1] > 1:
-                dx = np.diff(arr, axis=1)
-                dy = np.diff(arr, axis=0)
-                grad_mag = np.sqrt(dx[:-1, :] ** 2 + dy[:, :-1] ** 2)
-                features["blur_score"] = min(1.0, float(grad_mag.std()) / 50.0)
-                features["flank_visibility"] = min(1.0, float(grad_mag.mean()) / 30.0)
-        except Exception as e:
-            logger.warning("PIL quality computation failed for %s: %s", image_path, e)
-
-    return features
+    features = _compute_quality_features_raw(image_path)
+    if features is not None:
+        return features
+    return _seeded_quality_features(image_path or "fallback_image")
 
 
 def _compute_overall_quality(features: dict[str, float]) -> float:
@@ -205,21 +245,19 @@ def detect_subject(record: ImageRecord) -> DetectionRecord:
         and (optionally) bounding box and crop path.
     """
     image_path = record.image_path
-    path_exists = Path(image_path).exists()
+    quality_features = None
+    path_exists = False
 
-    # Compute quality features
-    if path_exists:
-        quality_features = _compute_quality_features(image_path)
-    else:
-        # Demo fallback: deterministic quality from image_id hash
-        h = int(hashlib.sha256(record.image_id.encode()).hexdigest(), 16)
-        quality_features = {
-            "blur_score": ((h >> 0) % 100) / 100.0 * 0.5 + 0.3,
-            "brightness": ((h >> 8) % 100) / 100.0 * 0.4 + 0.3,
-            "contrast": ((h >> 16) % 100) / 100.0 * 0.4 + 0.3,
-            "crop_area_fraction": 0.7,
-            "flank_visibility": ((h >> 24) % 100) / 100.0 * 0.5 + 0.2,
-        }
+    if image_path:
+        p = Path(image_path)
+        if p.is_file():
+            path_exists = True
+            quality_features = _compute_quality_features_raw(image_path)
+
+    # Only fall back to seeded pseudo-random values if the file genuinely
+    # can't be loaded (missing file, corrupt image, etc.)
+    if quality_features is None:
+        quality_features = _seeded_quality_features(record.image_id)
 
     overall_quality = _compute_overall_quality(quality_features)
     flank_vis = quality_features.get("flank_visibility", 0.5)

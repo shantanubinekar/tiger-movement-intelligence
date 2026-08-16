@@ -30,7 +30,9 @@ from src.schemas import (
 from src.gating import (
     THRESHOLD_AMBIGUOUS,
     THRESHOLD_TRUSTED,
+    UnknownStore,
     compute_evidence,
+    get_unknown_store,
     make_identity_decision,
 )
 
@@ -399,3 +401,105 @@ class TestUpdateHistoryInvariant:
                     f"update_history=True but decision={decision.decision} "
                     f"(scores: V={vs:.2f}, Q={qs:.2f}, S={ss:.2f}, T={ts:.2f}, H={hs:.2f})"
                 )
+
+
+class TestUnknownClustering:
+    """Unknown-individual embeddings with cosine similarity > 0.7 are grouped
+    under the same provisional ID (NEW-001, NEW-002, ...) and not added to trusted catalogue."""
+
+    def test_similar_unknown_embeddings_grouped_under_same_provisional_id(self):
+        """Two unknown embeddings with similarity > 0.7 share provisional ID;
+        a distinct embedding receives a new provisional ID."""
+        import numpy as np
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        store = UnknownStore()
+
+        # Create base unit embedding (512-dim)
+        np.random.seed(123)
+        vec1 = np.random.randn(512)
+        vec1 = vec1 / np.linalg.norm(vec1)
+
+        # Create vec2 with cosine similarity = 0.90 (> 0.70)
+        noise = np.random.randn(512)
+        noise = noise - np.dot(noise, vec1) * vec1
+        noise = noise / np.linalg.norm(noise)
+        vec2 = 0.90 * vec1 + np.sqrt(1 - 0.90**2) * noise
+        vec2 = vec2 / np.linalg.norm(vec2)
+
+        sim_1_2 = float(cosine_similarity(vec1.reshape(1, -1), vec2.reshape(1, -1))[0][0])
+        assert sim_1_2 > 0.70, f"Expected similarity > 0.70, got {sim_1_2}"
+
+        # Create vec3 orthogonal (cosine similarity = 0.0 < 0.70)
+        vec3 = noise
+
+        sim_1_3 = float(cosine_similarity(vec1.reshape(1, -1), vec3.reshape(1, -1))[0][0])
+        assert sim_1_3 < 0.70, f"Expected similarity < 0.70, got {sim_1_3}"
+
+        id1 = store.add_unknown("img_unk_001", vec1.tolist())
+        id2 = store.add_unknown("img_unk_002", vec2.tolist())
+        id3 = store.add_unknown("img_unk_003", vec3.tolist())
+
+        # First and second must share provisional ID (e.g. NEW-001)
+        assert id1 == "NEW-001"
+        assert id2 == "NEW-001", f"Expected id2 to be {id1}, got {id2}"
+        # Third must receive distinct provisional ID (e.g. NEW-002)
+        assert id3 == "NEW-002"
+
+        clusters = store.get_provisional_ids()
+        assert clusters["NEW-001"] == ["img_unk_001", "img_unk_002"]
+        assert clusters["NEW-002"] == ["img_unk_003"]
+
+    def test_unknown_decision_flow_assigns_clustered_provisional_id(self):
+        """make_identity_decision with unknown state groups similar embeddings
+        and sets update_history=False."""
+        from datetime import datetime, timezone
+        import numpy as np
+
+        get_unknown_store().clear()
+
+        np.random.seed(456)
+        vec1 = np.random.randn(512)
+        vec1 = vec1 / np.linalg.norm(vec1)
+
+        noise = np.random.randn(512)
+        noise = noise - np.dot(noise, vec1) * vec1
+        noise = noise / np.linalg.norm(noise)
+        vec2 = 0.90 * vec1 + np.sqrt(1 - 0.90**2) * noise
+        vec2 = vec2 / np.linalg.norm(vec2)
+
+        top1 = _make_candidate(visual_score=0.1, quality_score=0.2, spatial_feasibility=0.1,
+                               temporal_feasibility=0.1, history_consistency=0.1, image_id="img_low_1")
+        top2 = _make_candidate(visual_score=0.1, quality_score=0.2, spatial_feasibility=0.1,
+                               temporal_feasibility=0.1, history_consistency=0.1, image_id="img_low_2")
+
+        ctx1 = {
+            "embedding": vec1.tolist(),
+            "quality_score": 0.2,
+            "flank_visibility": 0.3,
+            "camera_status": CameraStatus.ACTIVE,
+            "timestamp": datetime(2026, 1, 5, 6, 0, tzinfo=timezone.utc),
+            "latitude": 21.68,
+            "longitude": 79.29,
+        }
+        ctx2 = {
+            "embedding": vec2.tolist(),
+            "quality_score": 0.2,
+            "flank_visibility": 0.3,
+            "camera_status": CameraStatus.ACTIVE,
+            "timestamp": datetime(2026, 1, 5, 7, 0, tzinfo=timezone.utc),
+            "latitude": 21.68,
+            "longitude": 79.29,
+        }
+
+        d1 = make_identity_decision([top1], context=ctx1)
+        d2 = make_identity_decision([top2], context=ctx2)
+
+        assert d1.decision == IdentityDecisionState.UNKNOWN
+        assert d2.decision == IdentityDecisionState.UNKNOWN
+        assert d1.update_history is False
+        assert d2.update_history is False
+        assert d1.identity_id == "NEW-001"
+        assert d2.identity_id == "NEW-001"
+
+
