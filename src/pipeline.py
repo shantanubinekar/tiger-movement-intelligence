@@ -216,8 +216,16 @@ def create_observation(decision: IdentityDecision) -> Observation | None:
     if not decision.update_history or decision.decision != IdentityDecisionState.TRUSTED_MATCH:
         return None
 
+    image_metadata = {
+        "station_id": decision.evidence_summary.get("station_id"),
+        "latitude": decision.evidence_summary.get("latitude"),
+        "longitude": decision.evidence_summary.get("longitude"),
+        "timestamp": decision.evidence_summary.get("timestamp"),
+        "camera_status": decision.evidence_summary.get("camera_status"),
+    }
+
     if _DEV3_AVAILABLE and not DEMO_MODE:
-        return _real_update_trusted_history(decision)
+        return _real_update_trusted_history(decision, image_metadata=image_metadata)
 
     # DEMO_MODE fallback
     return Observation(
