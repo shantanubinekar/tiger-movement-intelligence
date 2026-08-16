@@ -35,20 +35,34 @@ def render():
     col_path, col_btn = st.columns([3, 1])
     with col_path:
         folder_path = st.text_input(
-            "Image folder path:",
-            value=default_dir,
-            help="Directory containing camera-trap images.",
+            "Dataset folder or image directory path:",
+            value="data/real_tigers",
+            help="Specify any directory containing camera-trap images, or a structured dataset directory containing catalogue/ and query/ subfolders.",
         )
     with col_btn:
         st.markdown("<br>", unsafe_allow_html=True)
         btn_run = st.button("▶ Run Pipeline", type="primary", use_container_width=True)
 
     if btn_run:
-        with st.spinner("Processing…"):
-            try:
-                decisions = process_image_directory(folder_path)
-                st.session_state.decisions = decisions
+        p = Path(folder_path.strip())
+        if not p.exists():
+            st.error(f"❌ Directory not found: `{folder_path}` does not exist. Please verify the folder path.")
+            return
 
+        with st.spinner("Processing camera-trap captures and matching against catalogue…"):
+            try:
+                decisions = process_image_directory(folder_path.strip())
+                if not decisions:
+                    st.warning(
+                        f"⚠️ No valid image files could be processed in `{folder_path}`.\n\n"
+                        "**Expected dataset folder structure:**\n"
+                        "1. A direct image folder containing `.jpg` / `.png` camera-trap files.\n"
+                        "2. Or a structured dataset directory with `query/` and `catalogue/` subfolders and an optional `manifest.csv`.\n"
+                        "*(Default bundled benchmark: `data/real_tigers`)*"
+                    )
+                    return
+
+                st.session_state.decisions = decisions
                 observations = [
                     obs for obs in (create_observation(d) for d in decisions)
                     if obs is not None
@@ -59,7 +73,7 @@ def render():
                 st.session_state.processed = True
 
                 st.success(
-                    f"✅ Processed **{len(decisions)}** images → "
+                    f"✅ Processed **{len(decisions)}** images from `{folder_path}` → "
                     f"**{len(observations)}** trusted observations → "
                     f"**{len(st.session_state.alerts)}** alerts"
                 )

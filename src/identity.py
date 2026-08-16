@@ -109,9 +109,13 @@ class CatalogueStore:
         return identity_id in self._catalogue
 
 
-def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
-    """Create a demo catalogue with 3 synthetic tiger identities.
-    Embeddings are deterministic and reproducible."""
+def _build_demo_catalogue(
+    embedding_dim: int = 512,
+    dataset_dir: Optional[str] = None,
+) -> CatalogueStore:
+    """Create catalogue with known tiger identities and seed initial trusted
+    reference observations into TrustedHistory.
+    """
     store = CatalogueStore()
 
     demo_tigers = [
@@ -168,11 +172,27 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
             image_path=tiger.get("image_path"),
         )
 
-    # Automatically load real ATRW benchmark tigers if present
+    # Load real benchmark catalogue identities from manifest or catalogue directory
     import csv
     from pathlib import Path
-    manifest_path = Path("data/real_tigers/manifest.csv")
-    if manifest_path.exists():
+
+    manifest_candidates = []
+    if dataset_dir:
+        d_path = Path(dataset_dir)
+        manifest_candidates.extend([
+            d_path / "manifest.csv",
+            d_path.parent / "manifest.csv",
+            d_path / "catalogue" / "manifest.csv",
+        ])
+    manifest_candidates.append(Path("data/real_tigers/manifest.csv"))
+
+    manifest_path = None
+    for cand in manifest_candidates:
+        if cand.exists():
+            manifest_path = cand
+            break
+
+    if manifest_path is not None and manifest_path.exists():
         try:
             from src.perception import generate_embedding, generate_local_embedding
             with open(manifest_path, "r") as f:
@@ -183,6 +203,11 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
                     "T_real_03": ["STATION_R3", "STATION_R4"],
                     "T_real_04": ["STATION_R4", "STATION_R5"],
                     "T_real_05": ["STATION_R1", "STATION_R5"],
+                    "T_real_06": ["STATION_R1", "STATION_R3"],
+                    "T_real_07": ["STATION_R2", "STATION_R4"],
+                    "T_real_08": ["STATION_R3", "STATION_R5"],
+                    "T_real_09": ["STATION_R4", "STATION_R1"],
+                    "T_real_10": ["STATION_R5", "STATION_R2"],
                 }
                 for row in reader:
                     if row.get("role") == "catalogue":
@@ -201,9 +226,52 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
                                 local_embedding=loc_emb,
                                 image_path=img_path,
                             )
-            logger.info("Loaded real ATRW catalogue identities into CatalogueStore (total: %d)", len(store))
+            logger.info("Loaded real catalogue identities into CatalogueStore (total: %d)", len(store))
         except Exception as e:
             logger.warning("Failed to auto-load real tigers catalogue: %s", e)
+
+    # Seed initial trusted reference observations for catalogue individuals
+    # into TrustedHistory to represent verified ground truth.
+    try:
+        from datetime import datetime, timezone
+        from src.history import get_history
+        from src.schemas import CameraStatus, Observation, ObservationStatus
+
+        history = get_history()
+        station_coords = {
+            "STATION_A1": (21.680, 79.290),
+            "STATION_B2": (21.702, 79.315),
+            "STATION_C3": (21.664, 79.278),
+            "STATION_D4_BUFFER": (21.640, 79.260),
+            "STATION_R1": (21.750, 79.310),
+            "STATION_R2": (21.765, 79.325),
+            "STATION_R3": (21.780, 79.340),
+            "STATION_R4": (21.795, 79.360),
+            "STATION_R5": (21.810, 79.380),
+        }
+
+        for ind_id in store.get_all_identities():
+            if history.get_capture_count(ind_id) == 0:
+                meta = store.get_metadata(ind_id) or {}
+                st_ids = meta.get("station_ids", ["STATION_R1"])
+                for idx, st_name in enumerate(st_ids[:2]):
+                    lat, lon = station_coords.get(st_name, (21.750 + idx * 0.015, 79.310 + idx * 0.015))
+                    history.add_observation(Observation(
+                        observation_id=f"OBS_CAT_{ind_id}_{idx+1}",
+                        image_id=f"CAT_{ind_id}_{idx+1}",
+                        identity_id=ind_id,
+                        station_id=st_name,
+                        latitude=lat,
+                        longitude=lon,
+                        timestamp=datetime(2026, 1, 10 + idx, 6, 30, tzinfo=timezone.utc),
+                        identity_confidence=1.0,
+                        observation_status=ObservationStatus.TRUSTED,
+                        camera_status=CameraStatus.ACTIVE,
+                        quality_score=1.0,
+                    ))
+        logger.info("Seeded initial trusted baseline observations into TrustedHistory for catalogue tigers.")
+    except Exception as e:
+        logger.warning("Failed to seed catalogue trusted history: %s", e)
 
     return store
 
@@ -212,12 +280,19 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
 _default_catalogue: Optional[CatalogueStore] = None
 
 
-def get_default_catalogue() -> CatalogueStore:
-    """Get or create the default demo catalogue singleton."""
+def get_default_catalogue(dataset_dir: Optional[str] = None) -> CatalogueStore:
+    """Get or create the default catalogue singleton."""
     global _default_catalogue
-    if _default_catalogue is None:
-        _default_catalogue = _build_demo_catalogue()
-        logger.info("Initialized demo catalogue with %d identities", len(_default_catalogue))
+    if _default_catalogue is None or dataset_dir is not None:
+        _default_catalogue = _build_demo_catalogue(dataset_dir=dataset_dir)
+        logger.info("Initialized catalogue with %d identities", len(_default_catalogue))
+    return _default_catalogue
+
+
+def reset_default_catalogue(dataset_dir: Optional[str] = None) -> CatalogueStore:
+    """Reset and reload the default catalogue singleton."""
+    global _default_catalogue
+    _default_catalogue = _build_demo_catalogue(dataset_dir=dataset_dir)
     return _default_catalogue
 
 
@@ -326,7 +401,14 @@ def generate_candidates(
         )
 
         cat_meta = catalogue.get_metadata(identity_id) or {}
-        known_stations = cat_meta.get("station_ids", [])
+
+        # Spatial feasibility: check if current station is in the tiger's
+        # known station list from catalogue metadata AND trusted longitudinal history
+        from src.history import get_history
+        history = get_history()
+        trusted_stations = set(history.get_trusted_stations(identity_id))
+        known_stations = set(cat_meta.get("station_ids", [])) | trusted_stations
+
         if station_id and known_stations:
             if station_id in known_stations:
                 spatial_feasibility = 0.85 if is_buffer else 0.90
@@ -350,16 +432,16 @@ def generate_candidates(
         else:
             temporal_feasibility = 0.50  # missing timestamp
 
-        # History consistency: based on observation count in catalogue
-        obs_count = cat_meta.get("observation_count", 0)
+        # History consistency: based on total capture count in TrustedHistory + catalogue
+        obs_count = max(history.get_capture_count(identity_id), cat_meta.get("observation_count", 0))
         if obs_count >= 10:
             history_consistency = 0.85
         elif obs_count >= 5:
-            history_consistency = 0.65
+            history_consistency = 0.75
         elif obs_count >= 1:
-            history_consistency = 0.45
+            history_consistency = 0.65
         else:
-            history_consistency = 0.2
+            history_consistency = 0.20
 
         # Effective visual combining global visual score and local flank matching score
         eff_visual = 0.75 * visual_score + 0.25 * local_score

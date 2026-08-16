@@ -298,3 +298,81 @@ class TestHistoricalCaptureArea:
         assert hull is not None
         assert len(hull) >= 3
 
+
+class TestCatalogueHistorySeeding:
+    """Verify that catalogue seeding addresses the cold-start problem by providing
+    verified baseline observations that increase total evidence for matching queries."""
+
+    def test_catalogue_seeding_increases_query_total_evidence(self):
+        """A query candidate evaluated against a seeded catalogue individual must produce
+        higher total evidence than when evaluated against an unseeded zero-history store."""
+        from src.identity import CatalogueStore, generate_candidates
+        from src.history import reset_history, get_history
+        from src.schemas import CameraStatus, Observation, ObservationStatus
+
+        # 1. Create a catalogue with an identity
+        store = CatalogueStore()
+        dummy_vec = [1.0] + [0.0] * 511
+        store.add_identity(
+            identity_id="T_test_seed",
+            embedding=dummy_vec,
+            station_ids=["STATION_A1"],
+            last_seen_station="STATION_A1",
+            observation_count=0,
+            image_path=None,
+        )
+
+        query_ctx = {
+            "station_id": "STATION_A1",
+            "quality_score": 0.85,
+            "timestamp": datetime(2026, 1, 5, 6, 30, tzinfo=timezone.utc),
+        }
+
+        # 2. Unseeded evaluation (zero history in TrustedHistory)
+        reset_history()
+        candidates_unseeded = generate_candidates(
+            embedding=dummy_vec,
+            image_id="query_001",
+            catalogue=store,
+            context=query_ctx,
+        )
+        assert len(candidates_unseeded) > 0
+        c_unseeded = candidates_unseeded[0]
+
+        # 3. Seeded evaluation (one verified initial observation in TrustedHistory)
+        reset_history()
+        history = get_history()
+        history.add_observation(Observation(
+            observation_id="OBS_CAT_T_test_seed",
+            image_id="CAT_T_test_seed",
+            identity_id="T_test_seed",
+            station_id="STATION_A1",
+            latitude=21.680,
+            longitude=79.290,
+            timestamp=datetime(2026, 1, 1, 6, 30, tzinfo=timezone.utc),
+            identity_confidence=1.0,
+            observation_status=ObservationStatus.TRUSTED,
+            camera_status=CameraStatus.ACTIVE,
+            quality_score=1.0,
+        ))
+
+        candidates_seeded = generate_candidates(
+            embedding=dummy_vec,
+            image_id="query_001",
+            catalogue=store,
+            context=query_ctx,
+        )
+        assert len(candidates_seeded) > 0
+        c_seeded = candidates_seeded[0]
+
+        # 4. Assert seeded evidence scores higher than unseeded
+        assert c_seeded.history_consistency > c_unseeded.history_consistency, (
+            f"Expected seeded history consistency ({c_seeded.history_consistency}) "
+            f"to exceed unseeded ({c_unseeded.history_consistency})"
+        )
+        assert c_seeded.total_evidence > c_unseeded.total_evidence, (
+            f"Expected seeded total evidence ({c_seeded.total_evidence}) "
+            f"to exceed unseeded ({c_unseeded.total_evidence})"
+        )
+
+

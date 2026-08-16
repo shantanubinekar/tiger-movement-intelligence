@@ -106,9 +106,18 @@ def process_image_directory(path: str) -> list[IdentityDecision]:
     # --- Real logic (Developer 2) ---
     if _DEV2_AVAILABLE and not DEMO_MODE:
         try:
-            records = ingest_folder(path)
+            p = Path(path)
+            target_path = path
+            catalogue_dir = None
+            if p.is_dir() and (p / "query").is_dir():
+                target_path = str(p / "query")
+                catalogue_dir = str(p)
+            elif p.is_dir() and (p.parent / "catalogue").is_dir():
+                catalogue_dir = str(p.parent)
+
+            records = ingest_folder(target_path)
             if records:
-                catalogue = get_default_catalogue()
+                catalogue = get_default_catalogue(dataset_dir=catalogue_dir)
                 decisions: list[IdentityDecision] = []
 
                 for record in records:
