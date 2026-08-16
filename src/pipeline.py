@@ -292,7 +292,34 @@ def make_identity_decision(candidates: list[IdentityCandidate], context: dict | 
 
 # ---------------------------------------------------------------------------
 # DEVELOPER 3 owns the real implementation of these three.
+# The real logic lives in src/history.py, src/movement.py, src/alerts.py,
+# and src/evaluation.py. These wrappers call through to those modules
+# while preserving the DEMO_MODE fallback.
 # ---------------------------------------------------------------------------
+
+# Developer 3 imports — guarded so the file still loads if modules aren't
+# present yet (e.g. before Developer 3's branch is merged).
+try:
+    from src.history import (
+        update_trusted_history as _real_update_trusted_history,
+        get_history as _get_history,
+        compute_individual_summary as _compute_individual_summary,
+    )
+    from src.movement import (
+        detect_deviations as _detect_deviations,
+        MovementConfig as _MovementConfig,
+    )
+    from src.alerts import (
+        generate_alerts as _generate_alerts,
+        AlertConfig as _AlertConfig,
+    )
+    from src.evaluation import (
+        run_evaluation as _real_run_evaluation,
+    )
+    _DEV3_AVAILABLE = True
+except ImportError:
+    _DEV3_AVAILABLE = False
+
 
 def create_observation(decision: IdentityDecision) -> Observation | None:
     """Enforcement point: only trusted_match decisions may become a trusted
@@ -300,20 +327,30 @@ def create_observation(decision: IdentityDecision) -> Observation | None:
     if not decision.update_history or decision.decision != IdentityDecisionState.TRUSTED_MATCH:
         return None
 
-    if DEMO_MODE:
-        return Observation(
-            observation_id=f"obs_{decision.image_id}",
-            image_id=decision.image_id,
-            identity_id=decision.identity_id or "UNKNOWN",
-            station_id="STATION_DEMO_1",
-            latitude=21.68,
-            longitude=79.29,
-            timestamp=datetime.now(timezone.utc),
-            identity_confidence=decision.confidence,
-            camera_status=CameraStatus.ACTIVE,
-            quality_score=0.8,
-        )
-    raise NotImplementedError("Developer 3: wire to src/history.py update_trusted_history().")
+    image_metadata = {
+        "station_id": decision.evidence_summary.get("station_id"),
+        "latitude": decision.evidence_summary.get("latitude"),
+        "longitude": decision.evidence_summary.get("longitude"),
+        "timestamp": decision.evidence_summary.get("timestamp"),
+        "camera_status": decision.evidence_summary.get("camera_status"),
+    }
+
+    if _DEV3_AVAILABLE and not DEMO_MODE:
+        return _real_update_trusted_history(decision, image_metadata=image_metadata)
+
+    # DEMO_MODE fallback
+    return Observation(
+        observation_id=f"obs_{decision.image_id}",
+        image_id=decision.image_id,
+        identity_id=decision.identity_id or "UNKNOWN",
+        station_id="STATION_DEMO_1",
+        latitude=21.68,
+        longitude=79.29,
+        timestamp=datetime.now(timezone.utc),
+        identity_confidence=decision.confidence,
+        camera_status=CameraStatus.ACTIVE,
+        quality_score=0.8,
+    )
 
 
 def generate_movement_alerts(
@@ -321,54 +358,86 @@ def generate_movement_alerts(
 ) -> list[MovementAlert]:
     """Run movement-deviation analysis over trusted observations and
     generate or suppress alerts accordingly."""
-    if DEMO_MODE:
-        if not observations:
-            return []
-        alerts = []
-        for obs in observations[:1]:  # demo: only ever alert on the first
-            alerts.append(
-                MovementAlert(
-                    alert_id=f"alert_{obs.observation_id}",
-                    identity_id=obs.identity_id,
-                    alert_type=AlertType.NEW_STATION,
-                    confidence=0.6,
-                    status=AlertStatus.ACTIVE,
-                    evidence_observation_ids=[obs.observation_id],
-                    explanation=(
-                        "DEMO MODE placeholder: first trusted observation "
-                        f"for {obs.identity_id} treated as a new-station event."
-                    ),
-                )
+    if _DEV3_AVAILABLE and not DEMO_MODE:
+        all_alerts: list[MovementAlert] = []
+        history = _get_history()
+        movement_config = _MovementConfig()
+        alert_config = _AlertConfig()
+
+        for obs in observations:
+            identity_id = obs.identity_id
+            prior = [
+                o for o in history.get_observations(identity_id)
+                if o.observation_id != obs.observation_id
+            ]
+            hull = history.compute_historical_capture_area(identity_id)
+            deviations = _detect_deviations(
+                identity_id=identity_id,
+                history_observations=prior,
+                new_obs=obs,
+                historical_capture_area=hull,
+                station_context=station_context,
+                config=movement_config,
             )
-        return alerts
-    raise NotImplementedError(
-        "Developer 3: wire to src/movement.py + src/alerts.py generate_alerts()."
-    )
+            if deviations:
+                alerts = _generate_alerts(
+                    identity_id=identity_id,
+                    deviations=deviations,
+                    observation=obs,
+                    capture_count=history.get_capture_count(identity_id),
+                    station_context=station_context,
+                    config=alert_config,
+                )
+                all_alerts.extend(alerts)
+        return all_alerts
+
+    # DEMO_MODE fallback
+    if not observations:
+        return []
+    alerts = []
+    for obs in observations[:1]:  # demo: only ever alert on the first
+        alerts.append(
+            MovementAlert(
+                alert_id=f"alert_{obs.observation_id}",
+                identity_id=obs.identity_id,
+                alert_type=AlertType.NEW_STATION,
+                confidence=0.6,
+                status=AlertStatus.ACTIVE,
+                evidence_observation_ids=[obs.observation_id],
+                explanation=(
+                    "DEMO MODE placeholder: first trusted observation "
+                    f"for {obs.identity_id} treated as a new-station event."
+                ),
+            )
+        )
+    return alerts
 
 
 def run_evaluation(records: dict | None = None) -> list[EvaluationReport]:
     """Compare baseline (always-assign) vs. proposed (evidence-gated)
     pipelines on the same scenario set. Never fabricate numbers — use
     EvaluationReport.not_computable for anything not measurable yet."""
-    if DEMO_MODE:
-        return [
-            EvaluationReport(
-                pipeline_name="baseline",
-                not_computable=[
-                    "false_confident_identity_rate",
-                    "false_movement_alert_rate",
-                    "alert_precision",
-                ],
-                notes="DEMO MODE placeholder — no scenario evaluation run yet.",
-            ),
-            EvaluationReport(
-                pipeline_name="evidence_gated",
-                not_computable=[
-                    "false_confident_identity_rate",
-                    "false_movement_alert_rate",
-                    "alert_precision",
-                ],
-                notes="DEMO MODE placeholder — no scenario evaluation run yet.",
-            ),
-        ]
-    raise NotImplementedError("Developer 3: wire to src/evaluation.py run_identity_evaluation().")
+    if _DEV3_AVAILABLE and not DEMO_MODE:
+        return _real_run_evaluation(records)
+
+    # DEMO_MODE fallback
+    return [
+        EvaluationReport(
+            pipeline_name="baseline",
+            not_computable=[
+                "false_confident_identity_rate",
+                "false_movement_alert_rate",
+                "alert_precision",
+            ],
+            notes="DEMO MODE placeholder — no scenario evaluation run yet.",
+        ),
+        EvaluationReport(
+            pipeline_name="evidence_gated",
+            not_computable=[
+                "false_confident_identity_rate",
+                "false_movement_alert_rate",
+                "alert_precision",
+            ],
+            notes="DEMO MODE placeholder — no scenario evaluation run yet.",
+        ),
+    ]
