@@ -295,10 +295,25 @@ if not st.session_state.processed:
 # ---------------------------------------------------------------------------
 # Sidebar (Brand + Static Data Source Badge + Labeled Navigation)
 # ---------------------------------------------------------------------------
+import base64
+from pathlib import Path
+
+_emblem_b64 = ""
+_emblem_path = Path("assets/emblem.jpg")
+if _emblem_path.exists():
+    with open(_emblem_path, "rb") as f:
+        _emblem_b64 = f"data:image/jpeg;base64,{base64.b64encode(f.read()).decode('utf-8')}"
+
+_emblem_img_tag = (
+    f'<img src="{_emblem_b64}" class="sidebar-emblem" alt="National Emblem of India" style="width: 64px; height: auto; display: block; margin: 0 auto 6px auto;">'
+    if _emblem_b64
+    else '<div class="icon">🏛️</div>'
+)
+
 st.sidebar.markdown(
-    """
+    f"""
     <div class="sidebar-brand">
-        <div class="icon">🐯</div>
+        {_emblem_img_tag}
         <div class="title">Pench Tiger Reserve</div>
         <div class="sub">MP / Maharashtra · Movement Intelligence</div>
     </div>
