@@ -2,7 +2,7 @@
 app.py — Streamlit entrypoint for the Pench Tiger Reserve
 Evidence-Gated Movement Intelligence Portal.
 
-Matches the official Government Intelligence Portal UI specification.
+Government-portal-grade UI with clean formal styling.
 """
 
 from __future__ import annotations
@@ -20,244 +20,208 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Comprehensive UI Theme CSS (Exact match to reference design)
+# Comprehensive Government Portal CSS
 # ---------------------------------------------------------------------------
 PORTAL_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif:wght@600;700&display=swap');
+/* ── Base Reset ────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif:wght@700&display=swap');
 
-html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+html, body, [data-testid="stAppViewContainer"] {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: #f8fafc;
-    color: #0f172a;
 }
 
-/* ── Top Institutional Header Bar ──────────────────────────── */
-.top-gov-header {
-    background: #0f2942;
-    padding: 24px 36px 20px 36px;
+/* ── Top Institutional Banner ──────────────────────────────── */
+.portal-banner {
+    background: linear-gradient(135deg, #0c1f36 0%, #162d4a 60%, #1e3a5f 100%);
+    padding: 20px 28px 18px;
+    border-radius: 0 0 10px 10px;
     margin: -1rem -1rem 24px -1rem;
-    box-shadow: 0 4px 12px rgba(15, 41, 66, 0.15);
-}
-.top-gov-header h1 {
-    color: #ffffff !important;
-    font-family: 'Noto Serif', Georgia, serif;
-    font-size: 1.75rem;
-    font-weight: 700;
-    margin: 0 0 6px 0;
-    letter-spacing: 0.2px;
-}
-.top-gov-header .breadcrumbs {
-    color: #94a3b8;
-    font-size: 0.84rem;
-    font-weight: 400;
-    margin: 0;
-}
-.top-gov-header .breadcrumbs span {
-    color: #cbd5e1;
-}
-
-/* ── Sidebar Styling ───────────────────────────────────────── */
-[data-testid="stSidebar"] {
-    background-color: #ffffff !important;
-    border-right: 1px solid #e2e8f0;
-}
-.sidebar-header {
-    text-align: center;
-    padding: 10px 0 16px 0;
-    border-bottom: 1px solid #f1f5f9;
-    margin-bottom: 16px;
-}
-.sidebar-emblem {
-    width: 60px;
-    height: auto;
-    margin-bottom: 8px;
-}
-.sidebar-title {
-    font-family: 'Noto Serif', Georgia, serif;
-    font-size: 1.15rem;
-    font-weight: 700;
-    color: #0f2942;
-    margin: 0;
-}
-
-/* Sidebar Radio Navigation */
-[data-testid="stSidebar"] .stRadio > div {
-    gap: 4px;
-}
-[data-testid="stSidebar"] .stRadio label {
-    padding: 10px 14px;
-    border-radius: 6px;
-    font-weight: 500;
-    color: #334155;
-    transition: all 0.15s ease;
-    cursor: pointer;
-}
-[data-testid="stSidebar"] .stRadio label:hover {
-    background-color: #f8fafc;
-    color: #0f172a;
-}
-[data-testid="stSidebar"] [data-checked="true"] {
-    background-color: #fff7ed !important;
-    border-left: 4px solid #ea580c !important;
-    color: #9a3412 !important;
-    font-weight: 600 !important;
-}
-
-/* ── Metric Stat Cards ─────────────────────────────────────── */
-.stat-card-grid {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 14px;
-    margin-bottom: 24px;
-}
-.stat-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 16px 18px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    border-bottom: 4px solid #d97706;
     position: relative;
     overflow: hidden;
 }
-.stat-card.accent-orange {
-    border-left: 4px solid #ea580c;
+.portal-banner::before {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 200px; height: 100%;
+    background: linear-gradient(135deg, transparent 40%, rgba(217,119,6,0.15) 100%);
+    pointer-events: none;
 }
-.stat-card.accent-green {
-    border-left: 4px solid #059669;
-}
-.stat-card .val {
-    font-size: 1.7rem;
+.portal-banner h1 {
+    color: #ffffff !important;
+    font-family: 'Noto Serif', Georgia, serif;
+    font-size: 1.55rem;
+    margin: 0 0 4px 0;
     font-weight: 700;
-    color: #0f172a;
-    line-height: 1.2;
-    margin-bottom: 4px;
+    letter-spacing: 0.3px;
+    line-height: 1.3;
 }
-.stat-card .lbl {
-    font-size: 0.8rem;
-    color: #64748b;
-    font-weight: 500;
-}
-
-/* ── White Container Cards ─────────────────────────────────── */
-.portal-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    padding: 22px 24px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-    margin-bottom: 20px;
-}
-.portal-card-title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #0f172a;
-    margin: 0 0 16px 0;
-}
-
-/* ── Government Portal Data Table ──────────────────────────── */
-.gov-table-container {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    overflow: hidden;
-}
-.gov-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.88rem;
-    text-align: left;
-}
-.gov-table th {
-    background-color: #0f2942;
-    color: #ffffff;
-    padding: 12px 18px;
-    font-weight: 600;
+.portal-banner .subtitle {
+    color: #cbd5e1;
+    font-size: 0.82rem;
+    margin: 0;
+    font-weight: 400;
     letter-spacing: 0.2px;
 }
-.gov-table td {
-    padding: 12px 18px;
-    border-bottom: 1px solid #f1f5f9;
-    color: #334155;
-}
-.gov-table tr:last-child td {
-    border-bottom: none;
-}
-.gov-table tr:hover {
-    background-color: #f8fafc;
-}
-
-/* Status Badges */
-.badge-pill {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 14px;
-    font-size: 0.76rem;
+.portal-banner .accent {
+    color: #fbbf24;
     font-weight: 600;
-    text-align: center;
-}
-.badge-active {
-    background-color: #047857;
-    color: #ffffff;
-}
-.badge-pending {
-    background-color: #fed7aa;
-    color: #9a3412;
-}
-.badge-suppressed {
-    background-color: #cbd5e1;
-    color: #334155;
 }
 
-/* ── Photo Comparison Card ─────────────────────────────────── */
-.photo-comp-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 18px;
-    padding: 12px 0;
+/* ── Section Cards ─────────────────────────────────────────── */
+.section-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
-.photo-comp-circle {
-    width: 110px;
-    height: 110px;
-    border-radius: 50%;
-    overflow: hidden;
-    border: 2px solid #e2e8f0;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+.section-card-accent {
+    border-left: 4px solid #d97706;
 }
-.photo-comp-circle img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+
+/* ── Metric Cards ──────────────────────────────────────────── */
+.stMetric {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: box-shadow 0.2s ease;
 }
-.photo-comp-rect {
-    width: 130px;
-    height: 100px;
+.stMetric:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.stMetric label {
+    color: #64748b !important;
+    font-size: 0.78rem !important;
+    font-weight: 500 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.stMetric [data-testid="stMetricValue"] {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    font-size: 1.5rem !important;
+}
+.stMetric [data-testid="stMetricDelta"] {
+    opacity: 1 !important;
+    font-size: 0.75rem !important;
+}
+
+/* ── Expanders ─────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+[data-testid="stExpander"] summary {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.stButton > button[kind="primary"] {
+    background-color: #b45309;
+    border: none;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+.stButton > button[kind="primary"]:hover {
+    background-color: #92400e;
+}
+
+/* ── Dataframes ────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border: 1px solid #e2e8f0;
     border-radius: 8px;
     overflow: hidden;
-    border: 2px solid #e2e8f0;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.06);
-}
-.photo-comp-rect img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-.photo-connector {
-    display: flex;
-    align-items: center;
-    color: #ea580c;
-    font-weight: 700;
 }
 
-/* ── Universal Footer ──────────────────────────────────────── */
+/* ── Sidebar ───────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background-color: #f8fafc;
+    border-right: 1px solid #e2e8f0;
+}
+[data-testid="stSidebar"] .stRadio label {
+    font-weight: 500;
+    color: #334155;
+}
+.sidebar-brand {
+    text-align: center;
+    padding: 8px 0 16px 0;
+    border-bottom: 2px solid #e2e8f0;
+    margin-bottom: 16px;
+}
+.sidebar-brand .icon {
+    font-size: 2.2rem;
+    line-height: 1;
+}
+.sidebar-brand .title {
+    font-family: 'Noto Serif', Georgia, serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f2942;
+    margin: 6px 0 2px 0;
+    line-height: 1.2;
+}
+.sidebar-brand .sub {
+    font-size: 0.72rem;
+    color: #64748b;
+    letter-spacing: 0.3px;
+}
+.sidebar-notice {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 0.75rem;
+    color: #78350f;
+    line-height: 1.5;
+    margin-top: 12px;
+}
+
+/* ── Portal Footer ─────────────────────────────────────────── */
 .portal-footer {
-    margin-top: 40px;
-    padding: 16px 20px;
-    background: #ffffff;
-    border-top: 2px solid #e2e8f0;
+    margin-top: 48px;
+    padding: 16px 24px;
+    background: #f8fafc;
+    border-top: 3px solid #d97706;
     border-radius: 6px;
     text-align: center;
+    font-size: 0.78rem;
+    color: #64748b;
+    line-height: 1.6;
+}
+.portal-footer strong { color: #334155; }
+.portal-footer .formula { color: #94a3b8; font-style: italic; }
+
+/* ── Status Badges ─────────────────────────────────────────── */
+.status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+.badge-trusted { background: #dcfce7; color: #166534; }
+.badge-ambiguous { background: #fef3c7; color: #92400e; }
+.badge-unknown { background: #ffedd5; color: #9a3412; }
+.badge-rejected { background: #fee2e2; color: #991b1b; }
+
+/* ── Info/Warning/Success Box Refinements ──────────────────── */
+[data-testid="stAlert"] {
+    border-radius: 8px;
+    font-size: 0.88rem;
+}
+
+/* ── Image captions ────────────────────────────────────────── */
+[data-testid="stImage"] + div {
     font-size: 0.8rem;
     color: #64748b;
 }
@@ -267,15 +231,17 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 st.markdown(PORTAL_CSS, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
-# Top Institutional Header Bar
+# Institutional Banner
 # ---------------------------------------------------------------------------
 st.markdown(
     """
-    <div class="top-gov-header">
-        <h1>Pench Tiger Reserve — Movement Intelligence Portal</h1>
-        <div class="breadcrumbs">
-            Home &nbsp;›&nbsp; Dashboard &nbsp;›&nbsp; <span>Movement Intelligence Portal</span>
-        </div>
+    <div class="portal-banner">
+        <h1>🐯 Pench Tiger Reserve — Movement Intelligence Portal</h1>
+        <p class="subtitle">
+            <span class="accent">Evidence-Gated Identity Matching</span> ·
+            Classical Stripe-Pattern Keypoint Analysis (SIFT/ORB) · Spatial-Temporal Gating ·
+            Ecological Deviation Detection
+        </p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -297,14 +263,14 @@ for key, default in {
         st.session_state[key] = default
 
 # ---------------------------------------------------------------------------
-# Sidebar Setup (Emblem + Title + Navigation)
+# Sidebar
 # ---------------------------------------------------------------------------
 st.sidebar.markdown(
     """
-    <div class="sidebar-header">
-        <div style="font-size: 2.2rem; margin-bottom: 4px;">🇮🇳</div>
-        <div class="sidebar-title">Pench Tiger Reserve</div>
-        <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">NTCA · Forest Department</div>
+    <div class="sidebar-brand">
+        <div class="icon">🐯</div>
+        <div class="title">Pench Tiger Reserve</div>
+        <div class="sub">MP / Maharashtra · Movement Intelligence Portal</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -312,13 +278,13 @@ st.sidebar.markdown(
 
 # Data source selector
 data_source = st.sidebar.selectbox(
-    "Data Source:",
+    "📂 Active Data Source",
     [
         "Synthetic Demo Scenarios (Pench Layout)",
         "Real Tiger Images (ATRW Benchmark)",
     ],
     index=0 if st.session_state.data_source == "Synthetic Demo Scenarios (Pench Layout)" else 1,
-    help="Select between synthetic camera-trap scenarios or genuine ATRW benchmark tiger photos.",
+    help="Toggle between synthetic camera-trap scenarios or genuine ATRW benchmark tiger images.",
 )
 
 if data_source != st.session_state.data_source:
@@ -365,51 +331,65 @@ if st.session_state.get("_auto_process_pending", False) and not st.session_state
             st.error(f"Auto-processing failed: {e}")
     st.session_state._auto_process_pending = False
 
-st.sidebar.markdown("<br>", unsafe_allow_html=True)
+st.sidebar.markdown("---")
 
-# Navigation Menu matching the image icons
 PAGES = {
-    "🏠 Overview": "overview",
-    "📄 Processing": "processing",
-    "📑 Review Queue": "review",
-    "🗺️ Movement Map": "movement",
-    "🔔 Alerts": "alerts",
-    "📋 Evaluation": "evaluation",
+    "📊 Dashboard": "overview",
+    "⚙️ Processing": "processing",
+    "🔍 Review Queue": "review",
+    "🗺️ Movement & Catalogue": "movement",
+    "🚨 Alerts": "alerts",
+    "📈 Evaluation": "evaluation",
 }
 
 selected = st.sidebar.radio("Navigation", list(PAGES.keys()), index=0)
 
-# Banner notification for active data source
+st.sidebar.markdown(
+    """
+    <div class="sidebar-notice">
+        <strong>⚖️ Safety Invariant</strong><br>
+        Only <code>trusted_match</code> decisions with sufficient multi-factor
+        evidence update longitudinal history. All other states are withheld.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ---------------------------------------------------------------------------
+# Data Mode Banner
+# ---------------------------------------------------------------------------
 if st.session_state.data_source == "Real Tiger Images (ATRW Benchmark)":
     st.info(
-        "🐅 **Real ATRW Benchmark Active** — Validated on genuine tiger photographs with illustrative Pench reserve station grid.",
+        "🐅 **Real Dataset Active** — Processing ATRW (Amur Tiger Re-ID Benchmark) images. "
+        "Validated on genuine tiger photographs with illustrative Pench station grid — not field observations.",
         icon="🐅",
     )
 elif not st.session_state.processed:
     st.warning(
-        "⚠️ **Demo Mode Active** — Prototype scenario data for system demonstration.",
+        "⚠️ **Demo Mode** — Synthetic prototype data. "
+        "Results must never be presented as field observations.",
         icon="⚠️",
     )
 
 # ---------------------------------------------------------------------------
 # Page Routing
 # ---------------------------------------------------------------------------
-if selected == "🏠 Overview":
+if selected == "📊 Dashboard":
     from ui.overview import render
     render()
-elif selected == "📄 Processing":
+elif selected == "⚙️ Processing":
     from ui.processing import render
     render()
-elif selected == "📑 Review Queue":
+elif selected == "🔍 Review Queue":
     from ui.review import render
     render()
-elif selected == "🗺️ Movement Map":
+elif selected == "🗺️ Movement & Catalogue":
     from ui.movement import render
     render()
-elif selected == "🔔 Alerts":
+elif selected == "🚨 Alerts":
     from ui.alerts import render
     render()
-elif selected == "📋 Evaluation":
+elif selected == "📈 Evaluation":
     from ui.evaluation import render
     render()
 
@@ -419,8 +399,9 @@ elif selected == "📋 Evaluation":
 st.markdown(
     """
     <div class="portal-footer">
-        🏛️ <b>Pench Tiger Reserve Movement Intelligence System</b> · Smart India Hackathon Prototype ·
-        Evidence Formula: <i>E = W<sub>V</sub>·V + W<sub>Q</sub>·Q + W<sub>S</sub>·S + W<sub>T</sub>·T + W<sub>H</sub>·H</i>
+        <strong>Prototype — Evidence-Gated Identity & Movement Intelligence</strong><br>
+        Developed for Smart India Hackathon · Not an official government system ·
+        <span class="formula">E = W<sub>V</sub>·V + W<sub>Q</sub>·Q + W<sub>S</sub>·S + W<sub>T</sub>·T + W<sub>H</sub>·H</span>
     </div>
     """,
     unsafe_allow_html=True,
