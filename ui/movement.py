@@ -121,6 +121,23 @@ def render():
 
             st.markdown(f"**Associated Stations:** `{', '.join(sorted(data['trusted_stations'])) or 'None'}`")
 
+            # Show catalogue reference photo if available
+            from src.identity import get_default_catalogue
+            cat_img = get_default_catalogue().get_image_path(tid)
+            if cat_img and Path(cat_img).exists():
+                ref_col, info_col = st.columns([1, 2])
+                with ref_col:
+                    st.image(
+                        str(cat_img),
+                        caption=f"Catalogue Reference: {tid}",
+                        use_container_width=True,
+                    )
+                with info_col:
+                    st.caption(
+                        f"This is the registered catalogue photograph for **{tid}** used as the "
+                        f"reference template for classical stripe-pattern keypoint matching (SIFT/ORB)."
+                    )
+
             if data["station_details"]:
                 try:
                     import plotly.graph_objects as go

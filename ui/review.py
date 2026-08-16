@@ -105,6 +105,62 @@ def render():
                     f"| *Logged at {review_entry['timestamp']}*"
                 )
 
+            # --- Photo Display Section (always visible) ---
+            from src.identity import get_default_catalogue
+            from src.perception import generate_match_visualization
+
+            catalogue = get_default_catalogue()
+
+            # Resolve query image path
+            query_img = (
+                d.evidence_summary.get("crop_path")
+                or d.evidence_summary.get("image_path")
+            )
+            if not query_img:
+                for p_cand in [
+                    Path(f"data/real_tigers/query/{d.image_id}.jpg"),
+                    Path(f"data/demo/{d.image_id}.jpg"),
+                ]:
+                    if p_cand.exists():
+                        query_img = str(p_cand)
+                        break
+
+            # Resolve best catalogue match image path
+            best_cat_id = d.identity_id
+            best_cat_img = catalogue.get_image_path(best_cat_id) if best_cat_id else None
+
+            # Fall back to top candidate if assigned identity has no image
+            if not best_cat_img and d.top_candidates:
+                best_cat_id = d.top_candidates[0].candidate_identity
+                best_cat_img = catalogue.get_image_path(best_cat_id)
+
+            has_query = query_img and Path(query_img).exists()
+            has_cat = best_cat_img and Path(best_cat_img).exists()
+
+            if has_query or has_cat:
+                img_col1, img_col2 = st.columns(2)
+                with img_col1:
+                    if has_query:
+                        st.image(
+                            str(query_img),
+                            caption=f"Query Photo: {d.image_id}",
+                            use_container_width=True,
+                        )
+                    else:
+                        st.caption("📷 Synthetic scenario — no query image file available.")
+                with img_col2:
+                    if has_cat:
+                        st.image(
+                            str(best_cat_img),
+                            caption=f"Catalogue Reference: {best_cat_id}",
+                            use_container_width=True,
+                        )
+                    else:
+                        st.caption("📷 No catalogue reference image available.")
+            else:
+                st.caption("📷 Synthetic scenario — no real image files available for visual display.")
+
+            # --- Decision Details + Evidence Breakdown ---
             col1, col2 = st.columns([1, 1])
 
             with col1:
@@ -139,40 +195,28 @@ def render():
                         s_col4.metric("Spatial", f"{c.spatial_feasibility:.3f}")
                         s_col5.metric("Temporal", f"{c.temporal_feasibility:.3f}")
                         s_col6.metric("Stripe Local", f"{c.local_score:.3f}")
-
-                        # Check if real images exist for visual correspondence rendering
-                        from src.identity import get_default_catalogue
-                        from src.perception import generate_match_visualization
-
-                        cat_img = get_default_catalogue().get_image_path(c.candidate_identity)
-                        query_img = (
-                            d.evidence_summary.get("crop_path")
-                            or d.evidence_summary.get("image_path")
-                        )
-                        if not query_img:
-                            # Try common paths
-                            for p_cand in [
-                                Path(f"data/real_tigers/query/{d.image_id}.jpg"),
-                                Path(f"data/demo/{d.image_id}.jpg"),
-                            ]:
-                                if p_cand.exists():
-                                    query_img = str(p_cand)
-                                    break
-
-                        if query_img and cat_img and Path(query_img).exists() and Path(cat_img).exists():
-                            chk_key = f"chk_match_{d.image_id}_{c.candidate_identity}"
-                            if st.checkbox(f"🔍 Show Stripe Keypoint Match ({c.candidate_identity})", key=chk_key, value=False):
-                                vis = generate_match_visualization(str(query_img), str(cat_img))
-                                if vis is not None:
-                                    st.image(
-                                        vis,
-                                        caption=f"Classical CV stripe feature match: Query ({d.image_id}) ⟷ Catalogue ({c.candidate_identity})",
-                                        use_container_width=True,
-                                    )
-                                else:
-                                    st.caption("Visual keypoint match lines unavailable for this pair.")
-
                         st.markdown("---")
+
+            # --- Stripe Keypoint Match Visualization (toggle) ---
+            if has_query and d.top_candidates:
+                top_c = d.top_candidates[0]
+                top_cat_img = catalogue.get_image_path(top_c.candidate_identity)
+                if top_cat_img and Path(top_cat_img).exists():
+                    chk_key = f"chk_match_{d.image_id}_{top_c.candidate_identity}"
+                    if st.checkbox(
+                        f"🔍 Show Stripe Keypoint Correspondence Lines ({top_c.candidate_identity})",
+                        key=chk_key,
+                        value=False,
+                    ):
+                        vis = generate_match_visualization(str(query_img), str(top_cat_img))
+                        if vis is not None:
+                            st.image(
+                                vis,
+                                caption=f"Classical CV stripe feature match: Query ({d.image_id}) ⟷ Catalogue ({top_c.candidate_identity})",
+                                use_container_width=True,
+                            )
+                        else:
+                            st.caption("Visual keypoint match lines unavailable for this pair.")
 
             # ------ Interactive Review Controls ------
             st.markdown("##### 🛠️ Human Review Actions")

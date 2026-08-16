@@ -74,6 +74,9 @@ st.markdown(
         padding: 12px 16px;
         box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
+    .stMetric label { color: #475569 !important; }
+    .stMetric [data-testid="stMetricValue"] { color: #0f2942 !important; }
+    .stMetric [data-testid="stMetricDelta"] { opacity: 1 !important; }
 
     .sidebar-badge {
         background-color: #f1f5f9;
@@ -135,6 +138,43 @@ if data_source != st.session_state.data_source:
     st.session_state.decisions = []
     st.session_state.observations = []
     st.session_state.alerts = []
+    st.session_state.eval_reports = []
+    st.session_state._auto_process_pending = True
+
+# Auto-process on data source switch (runs once after the rerun triggered by selectbox change)
+if st.session_state.get("_auto_process_pending", False) and not st.session_state.processed:
+    from src.pipeline import (
+        create_observation,
+        generate_movement_alerts,
+        process_image_directory,
+        run_evaluation,
+    )
+
+    folder = (
+        "data/real_tigers/query"
+        if st.session_state.data_source == "Real Tiger Images (ATRW Benchmark)"
+        else "data/demo"
+    )
+    source_label = (
+        "ATRW benchmark tiger images"
+        if st.session_state.data_source == "Real Tiger Images (ATRW Benchmark)"
+        else "synthetic demo scenarios"
+    )
+
+    with st.spinner(f"Loading {source_label} from `{folder}`…"):
+        try:
+            decisions = process_image_directory(folder)
+            st.session_state.decisions = decisions
+            observations = [
+                obs for obs in (create_observation(d) for d in decisions) if obs is not None
+            ]
+            st.session_state.observations = observations
+            st.session_state.alerts = generate_movement_alerts(observations)
+            st.session_state.eval_reports = run_evaluation()
+            st.session_state.processed = True
+        except Exception as e:
+            st.error(f"Auto-processing failed: {e}")
+    st.session_state._auto_process_pending = False
 
 st.sidebar.markdown("---")
 
