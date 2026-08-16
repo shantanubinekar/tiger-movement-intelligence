@@ -16,16 +16,13 @@ from src.schemas import AlertType
 
 
 def render():
-    is_atrw = st.session_state.get("data_source") == "Real Tiger Images (ATRW Benchmark)"
     observations = st.session_state.get("observations", [])
     alerts = st.session_state.get("alerts", [])
 
     st.markdown("##### Individual Tiger Catalogue & Spatial Intelligence")
-
-    if is_atrw:
-        st.caption(
-            "🐅 ATRW benchmark data — illustrative Pench station grid, not actual GPS field readings."
-        )
+    st.caption(
+        "🐅 ATRW benchmark dataset — illustrative Pench reserve station grid for spatial trajectory demonstration."
+    )
 
     if not observations:
         st.info("No trusted observations yet. Process images or accept pending reviews to populate this view.")

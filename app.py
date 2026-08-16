@@ -2,7 +2,7 @@
 app.py — Streamlit entrypoint for the Pench Tiger Reserve
 Evidence-Gated Movement Intelligence Portal.
 
-Government-portal-grade UI with clean formal styling.
+Operates directly on the ATRW Real Tiger Benchmark dataset.
 """
 
 from __future__ import annotations
@@ -27,27 +27,21 @@ PORTAL_CSS = """
 /* ── Base Reset ────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif:wght@700&display=swap');
 
-html, body, [data-testid="stAppViewContainer"] {
+html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #ffffff;
+    color: #0f172a;
 }
 
 /* ── Top Institutional Banner ──────────────────────────────── */
 .portal-banner {
     background: linear-gradient(135deg, #0c1f36 0%, #162d4a 60%, #1e3a5f 100%);
     padding: 20px 28px 18px;
-    border-radius: 0 0 10px 10px;
-    margin: -1rem -1rem 24px -1rem;
+    border-radius: 0 0 8px 8px;
+    margin: -1rem -1rem 22px -1rem;
     border-bottom: 4px solid #d97706;
     position: relative;
     overflow: hidden;
-}
-.portal-banner::before {
-    content: '';
-    position: absolute;
-    top: 0; right: 0;
-    width: 200px; height: 100%;
-    background: linear-gradient(135deg, transparent 40%, rgba(217,119,6,0.15) 100%);
-    pointer-events: none;
 }
 .portal-banner h1 {
     color: #ffffff !important;
@@ -147,42 +141,84 @@ html, body, [data-testid="stAppViewContainer"] {
     background-color: #f8fafc;
     border-right: 1px solid #e2e8f0;
 }
-[data-testid="stSidebar"] .stRadio label {
-    font-weight: 500;
-    color: #334155;
-}
 .sidebar-brand {
     text-align: center;
-    padding: 8px 0 16px 0;
-    border-bottom: 2px solid #e2e8f0;
-    margin-bottom: 16px;
+    padding: 8px 0 14px 0;
+    border-bottom: 1px solid #e2e8f0;
+    margin-bottom: 14px;
 }
 .sidebar-brand .icon {
-    font-size: 2.2rem;
+    font-size: 2rem;
     line-height: 1;
 }
 .sidebar-brand .title {
     font-family: 'Noto Serif', Georgia, serif;
-    font-size: 1rem;
+    font-size: 1.05rem;
     font-weight: 700;
     color: #0f2942;
-    margin: 6px 0 2px 0;
-    line-height: 1.2;
+    margin: 4px 0 2px 0;
 }
 .sidebar-brand .sub {
     font-size: 0.72rem;
     color: #64748b;
     letter-spacing: 0.3px;
 }
-.sidebar-notice {
-    background: #fffbeb;
-    border: 1px solid #fde68a;
+
+/* ── Labeled Nav Menu ──────────────────────────────────────── */
+[data-testid="stSidebar"] [data-testid="stRadio"] > div {
+    gap: 4px;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
     border-radius: 6px;
+    background-color: transparent;
+    border-left: 3px solid transparent;
+    color: #334155;
+    font-size: 0.92rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+    cursor: pointer;
+    width: 100%;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {
+    background-color: #f1f5f9;
+    color: #0f2942;
+}
+/* Hide default radio circle */
+[data-testid="stSidebar"] [data-testid="stRadio"] label > div:first-child {
+    display: none !important;
+}
+/* Active/Selected item */
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked),
+[data-testid="stSidebar"] [data-testid="stRadio"] [aria-checked="true"] {
+    background-color: #fef3c7 !important;
+    border-left: 3px solid #0f2942 !important;
+    color: #0f2942 !important;
+    font-weight: 600 !important;
+}
+
+/* Badges */
+.sidebar-badge {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #0f2942;
     padding: 10px 12px;
-    font-size: 0.75rem;
-    color: #78350f;
-    line-height: 1.5;
-    margin-top: 12px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    color: #334155;
+    line-height: 1.45;
+}
+.badge-datasource {
+    background-color: #fef3c7;
+    border: 1px solid #fde68a;
+    border-left: 3px solid #d97706;
+    color: #92400e;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    margin-bottom: 14px;
 }
 
 /* ── Portal Footer ─────────────────────────────────────────── */
@@ -199,32 +235,6 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 .portal-footer strong { color: #334155; }
 .portal-footer .formula { color: #94a3b8; font-style: italic; }
-
-/* ── Status Badges ─────────────────────────────────────────── */
-.status-badge {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 12px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-}
-.badge-trusted { background: #dcfce7; color: #166534; }
-.badge-ambiguous { background: #fef3c7; color: #92400e; }
-.badge-unknown { background: #ffedd5; color: #9a3412; }
-.badge-rejected { background: #fee2e2; color: #991b1b; }
-
-/* ── Info/Warning/Success Box Refinements ──────────────────── */
-[data-testid="stAlert"] {
-    border-radius: 8px;
-    font-size: 0.88rem;
-}
-
-/* ── Image captions ────────────────────────────────────────── */
-[data-testid="stImage"] + div {
-    font-size: 0.8rem;
-    color: #64748b;
-}
 </style>
 """
 
@@ -248,7 +258,7 @@ st.markdown(
 )
 
 # ---------------------------------------------------------------------------
-# Session state defaults
+# Session state defaults & Auto-Ingestion
 # ---------------------------------------------------------------------------
 for key, default in {
     "decisions": [],
@@ -257,139 +267,107 @@ for key, default in {
     "eval_reports": [],
     "human_reviews": {},
     "processed": False,
-    "data_source": "Synthetic Demo Scenarios (Pench Layout)",
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
 
-# ---------------------------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------------------------
-st.sidebar.markdown(
-    """
-    <div class="sidebar-brand">
-        <div class="icon">🐯</div>
-        <div class="title">Pench Tiger Reserve</div>
-        <div class="sub">MP / Maharashtra · Movement Intelligence Portal</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-# Data source selector
-data_source = st.sidebar.selectbox(
-    "📂 Active Data Source",
-    [
-        "Synthetic Demo Scenarios (Pench Layout)",
-        "Real Tiger Images (ATRW Benchmark)",
-    ],
-    index=0 if st.session_state.data_source == "Synthetic Demo Scenarios (Pench Layout)" else 1,
-    help="Toggle between synthetic camera-trap scenarios or genuine ATRW benchmark tiger images.",
-)
-
-if data_source != st.session_state.data_source:
-    st.session_state.data_source = data_source
-    st.session_state.processed = False
-    st.session_state.decisions = []
-    st.session_state.observations = []
-    st.session_state.alerts = []
-    st.session_state.eval_reports = []
-    st.session_state._auto_process_pending = True
-
-# Auto-process on data source switch
-if st.session_state.get("_auto_process_pending", False) and not st.session_state.processed:
+# Auto-ingest real ATRW data directly on startup
+if not st.session_state.processed:
     from src.pipeline import (
         create_observation,
         generate_movement_alerts,
         process_image_directory,
         run_evaluation,
     )
+    try:
+        decisions = process_image_directory("data/real_tigers/query")
+        st.session_state.decisions = decisions
+        observations = [
+            obs for obs in (create_observation(d) for d in decisions) if obs is not None
+        ]
+        st.session_state.observations = observations
+        st.session_state.alerts = generate_movement_alerts(observations)
+        st.session_state.eval_reports = run_evaluation()
+        st.session_state.processed = True
+    except Exception as e:
+        st.error(f"Initial ingestion failed: {e}")
 
-    folder = (
-        "data/real_tigers/query"
-        if st.session_state.data_source == "Real Tiger Images (ATRW Benchmark)"
-        else "data/demo"
-    )
-    source_label = (
-        "ATRW benchmark tiger images"
-        if st.session_state.data_source == "Real Tiger Images (ATRW Benchmark)"
-        else "synthetic demo scenarios"
-    )
-
-    with st.spinner(f"Loading {source_label}…"):
-        try:
-            decisions = process_image_directory(folder)
-            st.session_state.decisions = decisions
-            observations = [
-                obs for obs in (create_observation(d) for d in decisions) if obs is not None
-            ]
-            st.session_state.observations = observations
-            st.session_state.alerts = generate_movement_alerts(observations)
-            st.session_state.eval_reports = run_evaluation()
-            st.session_state.processed = True
-        except Exception as e:
-            st.error(f"Auto-processing failed: {e}")
-    st.session_state._auto_process_pending = False
-
-st.sidebar.markdown("---")
-
-PAGES = {
-    "📊 Dashboard": "overview",
-    "⚙️ Processing": "processing",
-    "🔍 Review Queue": "review",
-    "🗺️ Movement & Catalogue": "movement",
-    "🚨 Alerts": "alerts",
-    "📈 Evaluation": "evaluation",
-}
-
-selected = st.sidebar.radio("Navigation", list(PAGES.keys()), index=0)
-
+# ---------------------------------------------------------------------------
+# Sidebar (Brand + Static Data Source Badge + Labeled Navigation)
+# ---------------------------------------------------------------------------
 st.sidebar.markdown(
     """
-    <div class="sidebar-notice">
-        <strong>⚖️ Safety Invariant</strong><br>
+    <div class="sidebar-brand">
+        <div class="icon">🐯</div>
+        <div class="title">Pench Tiger Reserve</div>
+        <div class="sub">MP / Maharashtra · Movement Intelligence</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Static Data Source Pill/Badge (Fix 1 & Fix 3)
+st.sidebar.markdown(
+    """
+    <div class="badge-datasource">
+        <span style="font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; display: block; color: #78350f; margin-bottom: 2px;">Active Data Source</span>
+        <b>ATRW Real Tiger Benchmark</b>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Labeled Navigation Menu (Fix 2)
+PAGES = {
+    "📊  Overview": "overview",
+    "⚙️  Processing": "processing",
+    "🔍  Review Queue": "review",
+    "🗺️  Movement Map": "movement",
+    "🚨  Alerts": "alerts",
+    "📈  Evaluation": "evaluation",
+}
+
+selected = st.sidebar.radio("Navigation", list(PAGES.keys()), index=0, label_visibility="collapsed")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown(
+    """
+    <div class="sidebar-badge">
+        <b>⚖️ Safety Invariant Active</b><br>
         Only <code>trusted_match</code> decisions with sufficient multi-factor
-        evidence update longitudinal history. All other states are withheld.
+        evidence update longitudinal history.
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 # ---------------------------------------------------------------------------
-# Data Mode Banner
+# Notification Banner
 # ---------------------------------------------------------------------------
-if st.session_state.data_source == "Real Tiger Images (ATRW Benchmark)":
-    st.info(
-        "🐅 **Real Dataset Active** — Processing ATRW (Amur Tiger Re-ID Benchmark) images. "
-        "Validated on genuine tiger photographs with illustrative Pench station grid — not field observations.",
-        icon="🐅",
-    )
-elif not st.session_state.processed:
-    st.warning(
-        "⚠️ **Demo Mode** — Synthetic prototype data. "
-        "Results must never be presented as field observations.",
-        icon="⚠️",
-    )
+st.info(
+    "🐅 **ATRW Real Tiger Benchmark Active** — Validated on genuine Amur tiger stripe photographs with illustrative Pench station layout.",
+    icon="🐅",
+)
 
 # ---------------------------------------------------------------------------
 # Page Routing
 # ---------------------------------------------------------------------------
-if selected == "📊 Dashboard":
+if selected == "📊  Overview":
     from ui.overview import render
     render()
-elif selected == "⚙️ Processing":
+elif selected == "⚙️  Processing":
     from ui.processing import render
     render()
-elif selected == "🔍 Review Queue":
+elif selected == "🔍  Review Queue":
     from ui.review import render
     render()
-elif selected == "🗺️ Movement & Catalogue":
+elif selected == "🗺️  Movement Map":
     from ui.movement import render
     render()
-elif selected == "🚨 Alerts":
+elif selected == "🚨  Alerts":
     from ui.alerts import render
     render()
-elif selected == "📈 Evaluation":
+elif selected == "📈  Evaluation":
     from ui.evaluation import render
     render()
 
@@ -400,7 +378,7 @@ st.markdown(
     """
     <div class="portal-footer">
         <strong>Prototype — Evidence-Gated Identity & Movement Intelligence</strong><br>
-        Developed for Smart India Hackathon · Not an official government system ·
+        Developed for Smart India Hackathon · Not an official government release ·
         <span class="formula">E = W<sub>V</sub>·V + W<sub>Q</sub>·Q + W<sub>S</sub>·S + W<sub>T</sub>·T + W<sub>H</sub>·H</span>
     </div>
     """,

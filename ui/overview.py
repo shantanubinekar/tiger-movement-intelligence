@@ -9,8 +9,6 @@ from src.schemas import AlertStatus, IdentityDecisionState
 
 
 def render():
-    is_atrw = st.session_state.get("data_source") == "Real Tiger Images (ATRW Benchmark)"
-
     decisions = st.session_state.get("decisions", [])
     observations = st.session_state.get("observations", [])
     alerts = st.session_state.get("alerts", [])
@@ -18,17 +16,10 @@ def render():
     # ── Welcome State ──────────────────────────────────────────
     if not decisions:
         st.markdown("### Welcome to the Movement Intelligence Portal")
-
-        if is_atrw:
-            st.info(
-                "🐅 **ATRW Benchmark Mode** — Select '⚙️ Processing' from the sidebar to run the pipeline "
-                "on genuine tiger images, or switch the data source above.",
-            )
-        else:
-            st.info(
-                "🌲 **Synthetic Demo Mode** — Select '⚙️ Processing' from the sidebar to run the "
-                "end-to-end pipeline on bundled demo scenarios.",
-            )
+        st.info(
+            "🐅 **ATRW Benchmark Active** — Select '⚙️ Processing' from the sidebar to ingest and process "
+            "genuine tiger camera-trap captures.",
+        )
 
         st.markdown("---")
         st.markdown("##### System Architecture")
@@ -69,8 +60,7 @@ def render():
     for state in IdentityDecisionState:
         counts[state.value] = sum(1 for d in decisions if d.decision == state)
 
-    mode_label = "ATRW Benchmark" if is_atrw else "Synthetic Demo"
-    st.caption(f"Active data source: **{mode_label}** · {total} images processed")
+    st.caption(f"Active data source: **ATRW Real Tiger Benchmark** · {total} images processed")
 
     # Row 1: Primary counts
     st.markdown("##### Identity Decision Distribution")

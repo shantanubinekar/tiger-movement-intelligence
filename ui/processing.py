@@ -19,8 +19,7 @@ from src.schemas import IdentityDecisionState
 
 
 def render():
-    is_atrw = st.session_state.get("data_source") == "Real Tiger Images (ATRW Benchmark)"
-    default_dir = "data/real_tigers/query" if is_atrw else "data/demo"
+    default_dir = "data/real_tigers/query"
 
     st.markdown("##### Pipeline Execution")
     st.caption(
@@ -28,10 +27,9 @@ def render():
         "Trusted History → Movement Alerts"
     )
 
-    if is_atrw:
-        st.info(
-            "🐅 **Benchmark Mode** — Processing genuine ATRW tiger query images against ATRW catalogue entries.",
-        )
+    st.info(
+        "🐅 **ATRW Benchmark Pipeline** — Ingests and processes genuine tiger camera-trap query crops against the catalogue.",
+    )
 
     # ── Controls ───────────────────────────────────────────────
     col_path, col_btn = st.columns([3, 1])
