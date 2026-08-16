@@ -26,6 +26,7 @@ from src.perception import (
     _deterministic_embedding,
     detect_subject,
     generate_embedding,
+    generate_local_embedding,
 )
 
 
@@ -212,3 +213,11 @@ class TestEmbedding:
         assert len(emb) == EMBEDDING_DIM
         norm = np.linalg.norm(emb)
         assert abs(norm - 1.0) < 1e-6
+
+    def test_generate_local_embedding(self):
+        """generate_local_embedding returns unit-normalized local vector."""
+        emb = generate_local_embedding("/nonexistent/path.jpg")
+        assert len(emb) == EMBEDDING_DIM
+        norm = np.linalg.norm(emb)
+        assert abs(norm - 1.0) < 1e-6
+

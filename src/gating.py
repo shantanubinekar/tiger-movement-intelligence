@@ -62,7 +62,10 @@ THRESHOLD_AMBIGUOUS = 0.55   # this <= E < THRESHOLD_TRUSTED -> ambiguous_review
 # E < THRESHOLD_AMBIGUOUS -> unknown (or rejected)
 
 # Minimum quality score below which we force insufficient_evidence
-MIN_QUALITY_FOR_DECISION = 0.15
+QUALITY_HARD_MIN = 0.20
+
+# Minimum quality score below which POOR_IMAGE_QUALITY reason code is flagged
+MIN_QUALITY_FOR_DECISION = 0.40
 
 # Minimum visual margin between top-1 and top-2 candidates
 # If margin is too small, the match is ambiguous even if score is high
@@ -168,7 +171,8 @@ def get_unknown_store() -> UnknownStore:
 def compute_evidence(candidate: IdentityCandidate, context: Optional[dict] = None) -> float:
     """Compute the composite evidence score E for a candidate.
 
-    E = W_V*V + W_Q*Q + W_S*S + W_T*T + W_H*H
+    E = W_V*V_eff + W_Q*Q + W_S*S + W_T*T + W_H*H
+    where V_eff combines global visual embedding with local stripe/flank matching proxy.
 
     All five component weights are configurable module-level constants.
     These are PROTOTYPE HEURISTICS, NOT scientifically validated parameters.
@@ -176,7 +180,7 @@ def compute_evidence(candidate: IdentityCandidate, context: Optional[dict] = Non
     Parameters
     ----------
     candidate : IdentityCandidate
-        Must have visual_score, quality_score, spatial_feasibility,
+        Must have visual_score, local_score, quality_score, spatial_feasibility,
         temporal_feasibility, history_consistency fields.
     context : dict, optional
         Additional context (camera_status, etc.) for conflict detection.
@@ -186,8 +190,13 @@ def compute_evidence(candidate: IdentityCandidate, context: Optional[dict] = Non
     float
         Composite evidence score in [0, 1].
     """
+    if candidate.local_score > 0.0:
+        eff_visual = 0.75 * candidate.visual_score + 0.25 * candidate.local_score
+    else:
+        eff_visual = candidate.visual_score
+
     E = (
-        W_VISUAL * candidate.visual_score
+        W_VISUAL * eff_visual
         + W_QUALITY * candidate.quality_score
         + W_SPATIAL * candidate.spatial_feasibility
         + W_TEMPORAL * candidate.temporal_feasibility
@@ -259,7 +268,7 @@ def _check_severe_failure(context: Optional[dict] = None) -> bool:
 
     # Severe: quality too low for any meaningful analysis
     quality = ctx.get("quality_score", 0.5)
-    if quality < 0.05:
+    if quality < QUALITY_HARD_MIN:
         return True
 
     # Severe: missing both location and timestamp
@@ -342,7 +351,7 @@ def make_identity_decision(
         if camera_status == CameraStatus.INACTIVE or camera_status == "inactive":
             reason_codes.append(ReasonCode.CAMERA_RELOCATED)
         quality = ctx.get("quality_score", 0.5)
-        if quality < 0.05:
+        if quality < QUALITY_HARD_MIN:
             reason_codes.append(ReasonCode.POOR_IMAGE_QUALITY)
         if not reason_codes:
             reason_codes.append(ReasonCode.MISSING_LOCATION)
@@ -400,6 +409,26 @@ def make_identity_decision(
             if prov_id:
                 identity_id = prov_id  # provisional, NOT trusted
 
+    # Extract seasonal period if timestamp is available
+    timestamp = ctx.get("timestamp")
+    seasonal_period = None
+    if timestamp is not None and hasattr(timestamp, "month"):
+        m = timestamp.month
+        if 6 <= m <= 9:
+            seasonal_period = "monsoon"
+        elif 10 <= m <= 12 or 1 <= m <= 2:
+            seasonal_period = "winter"
+        else:
+            seasonal_period = "summer"
+
+    station_id_val = ctx.get("station_id")
+    buffer_stations = ctx.get("buffer_stations") or set()
+    is_buffer = (
+        (station_id_val in buffer_stations)
+        or (isinstance(station_id_val, str) and ("BUFFER" in station_id_val.upper() or "VILLAGE" in station_id_val.upper()))
+        or bool(ctx.get("is_buffer"))
+    )
+
     # Build evidence summary
     # NOTE: station_id/latitude/longitude/timestamp/camera_status are copied
     # through so Backend B's create_observation() can extract the original
@@ -425,10 +454,12 @@ def make_identity_decision(
             "W_TEMPORAL": W_TEMPORAL,
             "W_HISTORY": W_HISTORY,
         },
-        "station_id": ctx.get("station_id"),
+        "station_id": station_id_val,
+        "is_buffer_zone": is_buffer,
+        "seasonal_period": seasonal_period,
         "latitude": ctx.get("latitude"),
         "longitude": ctx.get("longitude"),
-        "timestamp": ctx.get("timestamp"),
+        "timestamp": timestamp,
         "camera_status": ctx.get("camera_status"),
     }
 
@@ -442,3 +473,138 @@ def make_identity_decision(
         evidence_summary=evidence_summary,
         update_history=update_history,
     )
+
+
+# ---------------------------------------------------------------------------
+# Calibration check (P2 research feature)
+# ---------------------------------------------------------------------------
+
+def check_calibration(
+    decisions_with_ground_truth: list[dict | tuple],
+    n_bins: int = 5,
+    bin_ranges: Optional[list[tuple[float, float]]] = None,
+) -> dict:
+    """Bucket IdentityDecisions by predicted confidence and evaluate empirical
+    accuracy against ground-truth labels.
+
+    Evaluates whether confidence scores (e.g. 0.80) reflect actual correctness
+    probabilities, computing Expected Calibration Error (ECE).
+
+    Parameters
+    ----------
+    decisions_with_ground_truth : list[dict | tuple]
+        Entries to evaluate. Supported formats:
+        - dict: {"decision": IdentityDecision, "true_identity": str | None, "should_create_observation": bool}
+        - tuple: (decision, true_identity, should_create_observation)
+    n_bins : int, default=5
+        Number of equal-width bins between 0.0 and 1.0 if bin_ranges is None.
+    bin_ranges : list[tuple[float, float]], optional
+        Custom list of (min_conf, max_conf) tuples.
+
+    Returns
+    -------
+    dict
+        Structured calibration report with buckets, ECE, and MCE.
+    """
+    if not decisions_with_ground_truth:
+        return {
+            "total_samples": 0,
+            "buckets": [],
+            "expected_calibration_error": 0.0,
+            "max_calibration_error": 0.0,
+        }
+
+    # Normalize entries into parsed tuples: (decision, true_identity, should_create)
+    parsed_entries = []
+    for item in decisions_with_ground_truth:
+        if isinstance(item, dict):
+            decision = item["decision"]
+            true_id = item.get("true_identity")
+            should_create = item.get("should_create_observation", True)
+        elif isinstance(item, (tuple, list)):
+            decision = item[0]
+            true_id = item[1] if len(item) > 1 else None
+            should_create = item[2] if len(item) > 2 else True
+        else:
+            continue
+
+        # Evaluate if the decision correctly matches ground truth
+        if should_create:
+            is_correct = (
+                decision.decision == IdentityDecisionState.TRUSTED_MATCH
+                and decision.update_history is True
+                and (true_id is None or decision.identity_id == true_id)
+            )
+        else:
+            is_correct = (
+                decision.decision != IdentityDecisionState.TRUSTED_MATCH
+                and decision.update_history is False
+            )
+
+        parsed_entries.append({
+            "confidence": float(decision.confidence),
+            "is_correct": is_correct,
+            "decision": decision,
+        })
+
+    total_n = len(parsed_entries)
+    if total_n == 0:
+        return {
+            "total_samples": 0,
+            "buckets": [],
+            "expected_calibration_error": 0.0,
+            "max_calibration_error": 0.0,
+        }
+
+    # Define bins
+    if bin_ranges is not None:
+        bins = bin_ranges
+    else:
+        step = 1.0 / n_bins
+        bins = [(round(i * step, 4), round((i + 1) * step, 4)) for i in range(n_bins)]
+
+    buckets_data = []
+    total_ece_acc = 0.0
+    max_ce = 0.0
+
+    for idx, (b_low, b_high) in enumerate(bins):
+        # Inclusive of upper bound for the final bin
+        if idx == len(bins) - 1:
+            in_bucket = [
+                e for e in parsed_entries
+                if b_low <= e["confidence"] <= b_high
+            ]
+        else:
+            in_bucket = [
+                e for e in parsed_entries
+                if b_low <= e["confidence"] < b_high
+            ]
+
+        count = len(in_bucket)
+        if count > 0:
+            avg_conf = round(sum(e["confidence"] for e in in_bucket) / count, 4)
+            accuracy = round(sum(1 for e in in_bucket if e["is_correct"]) / count, 4)
+            cal_err = round(abs(avg_conf - accuracy), 4)
+            total_ece_acc += cal_err * (count / total_n)
+            max_ce = max(max_ce, cal_err)
+        else:
+            avg_conf = None
+            accuracy = None
+            cal_err = None
+
+        buckets_data.append({
+            "bin_range": (b_low, b_high),
+            "bin_label": f"{b_low:.1f}-{b_high:.1f}",
+            "count": count,
+            "avg_confidence": avg_conf,
+            "empirical_accuracy": accuracy,
+            "calibration_error": cal_err,
+        })
+
+    return {
+        "total_samples": total_n,
+        "buckets": buckets_data,
+        "expected_calibration_error": round(total_ece_acc, 4),
+        "max_calibration_error": round(max_ce, 4),
+    }
+
