@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+<<<<<<< HEAD
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+=======
+>>>>>>> 2dc8b5ab31ba56ed0d2259759c4b7d4948ec0c6a

@@ -30,6 +30,10 @@ demo fallback required by the project contract, not throwaway code.
 from __future__ import annotations
 
 import hashlib
+<<<<<<< HEAD
+=======
+import logging
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -46,13 +50,38 @@ from src.schemas import (
     MovementAlert,
     Observation,
     ReasonCode,
+<<<<<<< HEAD
 )
 
+=======
+    TriageStatus,
+)
+
+logger = logging.getLogger(__name__)
+
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
 # Set to False once Developer 2 / Developer 3 wire in real logic for a given
 # function. Keeping this per-module rather than global lets you flip pieces
 # on independently as each branch lands.
 DEMO_MODE = True
 
+<<<<<<< HEAD
+=======
+# Developer 2 real logic is now available — used when DEMO_MODE is False
+# (or as the primary path when True, with demo fallback on import failure).
+_DEV2_AVAILABLE = False
+try:
+    from src.ingestion import ingest_folder
+    from src.triage import triage_image
+    from src.perception import detect_subject, generate_embedding
+    from src.identity import generate_candidates as _real_generate_candidates
+    from src.identity import get_default_catalogue
+    from src.gating import make_identity_decision as _real_make_identity_decision
+    _DEV2_AVAILABLE = True
+except ImportError as e:
+    logger.warning("Developer 2 modules not fully available: %s — using demo fallback", e)
+
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
 
 def _seeded_float(seed: str, low: float = 0.0, high: float = 1.0) -> float:
     """Deterministic pseudo-random float in [low, high], seeded from a
@@ -74,7 +103,85 @@ def process_image_directory(path: str) -> list[IdentityDecision]:
     DEMO_MODE: fabricates a handful of decisions covering each decision
     state, so downstream code and the UI have something real to render.
     """
+<<<<<<< HEAD
     if DEMO_MODE:
+=======
+    # --- Real logic (Developer 2) ---
+    if _DEV2_AVAILABLE:
+        try:
+            # Step 1: Ingest folder
+            records = ingest_folder(path)
+            if not records:
+                logger.info("No images found in %s — falling back to demo", path)
+                # Fall through to demo mode below
+            else:
+                catalogue = get_default_catalogue()
+                decisions: list[IdentityDecision] = []
+
+                for record in records:
+                    # Step 2: Triage
+                    triage = triage_image(record)
+
+                    # Skip blank images — mark as blank decision
+                    if triage.triage_status == TriageStatus.BLANK:
+                        decisions.append(IdentityDecision(
+                            image_id=record.image_id,
+                            decision=IdentityDecisionState.BLANK,
+                            confidence=triage.blank_probability,
+                            reason_codes=[],
+                            evidence_summary={
+                                "triage_status": "blank",
+                                "blank_probability": triage.blank_probability,
+                            },
+                            update_history=False,
+                        ))
+                        continue
+
+                    # Step 3: Detect subject + compute quality
+                    detection = detect_subject(record)
+
+                    # Step 4: Generate embedding
+                    crop_path = detection.crop_path or record.image_path
+                    embedding = generate_embedding(crop_path)
+
+                    # Step 5: Generate candidates
+                    context = {
+                        "station_id": record.station_id,
+                        "latitude": record.latitude,
+                        "longitude": record.longitude,
+                        "timestamp": record.timestamp,
+                        "quality_score": detection.quality_score,
+                        "flank_visibility": detection.flank_visibility,
+                        "camera_status": record.camera_status,
+                    }
+                    candidates = _real_generate_candidates(
+                        embedding=embedding,
+                        image_id=record.image_id,
+                        catalogue=catalogue,
+                        context=context,
+                    )
+
+                    # Step 6: Gating decision
+                    gate_context = {
+                        **context,
+                        "image_id": record.image_id,
+                        "embedding": embedding,
+                        "detection_confidence": detection.detection_confidence,
+                    }
+                    decision = _real_make_identity_decision(candidates, gate_context)
+                    decisions.append(decision)
+
+                logger.info(
+                    "Processed %d images from %s: %d decisions",
+                    len(records), path, len(decisions),
+                )
+                return decisions
+        except Exception as e:
+            logger.error("Real pipeline failed: %s — falling back to demo mode", e)
+
+    # --- Demo fallback ---
+    if True:  # Demo fallback always available
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
         p = Path(path)
         image_ids = (
             [f.stem for f in sorted(p.glob("*")) if f.is_file()]
@@ -124,6 +231,7 @@ def process_image_directory(path: str) -> list[IdentityDecision]:
             )
         return decisions
 
+<<<<<<< HEAD
     raise NotImplementedError(
         "Developer 2: replace this branch with real ingestion -> triage -> "
         "perception -> candidate generation -> gating, calling into "
@@ -149,11 +257,52 @@ def generate_candidates(image_record: ImageRecord) -> list[IdentityCandidate]:
             )
         ]
     raise NotImplementedError("Developer 2: wire to src/identity.py generate_candidates().")
+=======
+
+def generate_candidates(image_record: ImageRecord) -> list[IdentityCandidate]:
+    """Given one ImageRecord, return ranked candidate identities."""
+    # --- Real logic (Developer 2) ---
+    if _DEV2_AVAILABLE:
+        try:
+            detection = detect_subject(image_record)
+            crop_path = detection.crop_path or image_record.image_path
+            embedding = generate_embedding(crop_path)
+            context = {
+                "station_id": image_record.station_id,
+                "latitude": image_record.latitude,
+                "longitude": image_record.longitude,
+                "timestamp": image_record.timestamp,
+                "quality_score": detection.quality_score,
+            }
+            return _real_generate_candidates(
+                embedding=embedding,
+                image_id=image_record.image_id,
+                context=context,
+            )
+        except Exception as e:
+            logger.error("Real generate_candidates failed: %s — using demo fallback", e)
+
+    # --- Demo fallback ---
+    return [
+        IdentityCandidate(
+            image_id=image_record.image_id,
+            candidate_identity="T01",
+            rank=1,
+            visual_score=_seeded_float(image_record.image_id + "v", 0.4, 0.95),
+            quality_score=_seeded_float(image_record.image_id + "q", 0.3, 0.9),
+            spatial_feasibility=0.8,
+            temporal_feasibility=0.8,
+            history_consistency=0.7,
+            total_evidence=_seeded_float(image_record.image_id + "e", 0.3, 0.95),
+        )
+    ]
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
 
 
 def make_identity_decision(candidates: list[IdentityCandidate], context: dict | None = None) -> IdentityDecision:
     """Given ranked candidates + context (station/time/camera/history),
     return the gated IdentityDecision."""
+<<<<<<< HEAD
     if DEMO_MODE:
         top = candidates[0] if candidates else None
         if top and top.total_evidence >= 0.8:
@@ -177,18 +326,82 @@ def make_identity_decision(candidates: list[IdentityCandidate], context: dict | 
             update_history=False,
         )
     raise NotImplementedError("Developer 2: wire to src/gating.py make_identity_decision().")
+=======
+    # --- Real logic (Developer 2) ---
+    if _DEV2_AVAILABLE:
+        try:
+            return _real_make_identity_decision(candidates, context)
+        except Exception as e:
+            logger.error("Real make_identity_decision failed: %s — using demo fallback", e)
+
+    # --- Demo fallback ---
+    top = candidates[0] if candidates else None
+    if top and top.total_evidence >= 0.8:
+        return IdentityDecision(
+            image_id=top.image_id,
+            decision=IdentityDecisionState.TRUSTED_MATCH,
+            identity_id=top.candidate_identity,
+            confidence=top.total_evidence,
+            top_candidates=candidates,
+            reason_codes=[ReasonCode.HIGH_CONFIDENCE_MATCH],
+            evidence_summary={"data_mode": DataMode.DEMO.value},
+            update_history=True,
+        )
+    return IdentityDecision(
+        image_id=top.image_id if top else "unknown",
+        decision=IdentityDecisionState.AMBIGUOUS_REVIEW,
+        confidence=top.total_evidence if top else 0.0,
+        top_candidates=candidates,
+        reason_codes=[ReasonCode.LOW_VISUAL_MARGIN],
+        evidence_summary={"data_mode": DataMode.DEMO.value},
+        update_history=False,
+    )
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
 
 
 # ---------------------------------------------------------------------------
 # DEVELOPER 3 owns the real implementation of these three.
+<<<<<<< HEAD
 # ---------------------------------------------------------------------------
 
+=======
+# The real logic lives in src/history.py, src/movement.py, src/alerts.py,
+# and src/evaluation.py. These wrappers call through to those modules
+# while preserving the DEMO_MODE fallback.
+# ---------------------------------------------------------------------------
+
+# Developer 3 imports — guarded so the file still loads if modules aren't
+# present yet (e.g. before Developer 3's branch is merged).
+try:
+    from src.history import (
+        update_trusted_history as _real_update_trusted_history,
+        get_history as _get_history,
+        compute_individual_summary as _compute_individual_summary,
+    )
+    from src.movement import (
+        detect_deviations as _detect_deviations,
+        MovementConfig as _MovementConfig,
+    )
+    from src.alerts import (
+        generate_alerts as _generate_alerts,
+        AlertConfig as _AlertConfig,
+    )
+    from src.evaluation import (
+        run_evaluation as _real_run_evaluation,
+    )
+    _DEV3_AVAILABLE = True
+except ImportError:
+    _DEV3_AVAILABLE = False
+
+
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
 def create_observation(decision: IdentityDecision) -> Observation | None:
     """Enforcement point: only trusted_match decisions may become a trusted
     Observation. Everything else returns None."""
     if not decision.update_history or decision.decision != IdentityDecisionState.TRUSTED_MATCH:
         return None
 
+<<<<<<< HEAD
     if DEMO_MODE:
         return Observation(
             observation_id=f"obs_{decision.image_id}",
@@ -203,6 +416,32 @@ def create_observation(decision: IdentityDecision) -> Observation | None:
             quality_score=0.8,
         )
     raise NotImplementedError("Developer 3: wire to src/history.py update_trusted_history().")
+=======
+    image_metadata = {
+        "station_id": decision.evidence_summary.get("station_id"),
+        "latitude": decision.evidence_summary.get("latitude"),
+        "longitude": decision.evidence_summary.get("longitude"),
+        "timestamp": decision.evidence_summary.get("timestamp"),
+        "camera_status": decision.evidence_summary.get("camera_status"),
+    }
+
+    if _DEV3_AVAILABLE and not DEMO_MODE:
+        return _real_update_trusted_history(decision, image_metadata=image_metadata)
+
+    # DEMO_MODE fallback
+    return Observation(
+        observation_id=f"obs_{decision.image_id}",
+        image_id=decision.image_id,
+        identity_id=decision.identity_id or "UNKNOWN",
+        station_id="STATION_DEMO_1",
+        latitude=21.68,
+        longitude=79.29,
+        timestamp=datetime.now(timezone.utc),
+        identity_confidence=decision.confidence,
+        camera_status=CameraStatus.ACTIVE,
+        quality_score=0.8,
+    )
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
 
 
 def generate_movement_alerts(
@@ -210,6 +449,7 @@ def generate_movement_alerts(
 ) -> list[MovementAlert]:
     """Run movement-deviation analysis over trusted observations and
     generate or suppress alerts accordingly."""
+<<<<<<< HEAD
     if DEMO_MODE:
         if not observations:
             return []
@@ -233,12 +473,68 @@ def generate_movement_alerts(
     raise NotImplementedError(
         "Developer 3: wire to src/movement.py + src/alerts.py generate_alerts()."
     )
+=======
+    if _DEV3_AVAILABLE and not DEMO_MODE:
+        all_alerts: list[MovementAlert] = []
+        history = _get_history()
+        movement_config = _MovementConfig()
+        alert_config = _AlertConfig()
+
+        for obs in observations:
+            identity_id = obs.identity_id
+            prior = [
+                o for o in history.get_observations(identity_id)
+                if o.observation_id != obs.observation_id
+            ]
+            hull = history.compute_historical_capture_area(identity_id)
+            deviations = _detect_deviations(
+                identity_id=identity_id,
+                history_observations=prior,
+                new_obs=obs,
+                historical_capture_area=hull,
+                station_context=station_context,
+                config=movement_config,
+            )
+            if deviations:
+                alerts = _generate_alerts(
+                    identity_id=identity_id,
+                    deviations=deviations,
+                    observation=obs,
+                    capture_count=history.get_capture_count(identity_id),
+                    station_context=station_context,
+                    config=alert_config,
+                )
+                all_alerts.extend(alerts)
+        return all_alerts
+
+    # DEMO_MODE fallback
+    if not observations:
+        return []
+    alerts = []
+    for obs in observations[:1]:  # demo: only ever alert on the first
+        alerts.append(
+            MovementAlert(
+                alert_id=f"alert_{obs.observation_id}",
+                identity_id=obs.identity_id,
+                alert_type=AlertType.NEW_STATION,
+                confidence=0.6,
+                status=AlertStatus.ACTIVE,
+                evidence_observation_ids=[obs.observation_id],
+                explanation=(
+                    "DEMO MODE placeholder: first trusted observation "
+                    f"for {obs.identity_id} treated as a new-station event."
+                ),
+            )
+        )
+    return alerts
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
 
 
 def run_evaluation(records: dict | None = None) -> list[EvaluationReport]:
     """Compare baseline (always-assign) vs. proposed (evidence-gated)
     pipelines on the same scenario set. Never fabricate numbers — use
     EvaluationReport.not_computable for anything not measurable yet."""
+<<<<<<< HEAD
     if DEMO_MODE:
         return [
             EvaluationReport(
@@ -261,3 +557,29 @@ def run_evaluation(records: dict | None = None) -> list[EvaluationReport]:
             ),
         ]
     raise NotImplementedError("Developer 3: wire to src/evaluation.py run_identity_evaluation().")
+=======
+    if _DEV3_AVAILABLE and not DEMO_MODE:
+        return _real_run_evaluation(records)
+
+    # DEMO_MODE fallback
+    return [
+        EvaluationReport(
+            pipeline_name="baseline",
+            not_computable=[
+                "false_confident_identity_rate",
+                "false_movement_alert_rate",
+                "alert_precision",
+            ],
+            notes="DEMO MODE placeholder — no scenario evaluation run yet.",
+        ),
+        EvaluationReport(
+            pipeline_name="evidence_gated",
+            not_computable=[
+                "false_confident_identity_rate",
+                "false_movement_alert_rate",
+                "alert_precision",
+            ],
+            notes="DEMO MODE placeholder — no scenario evaluation run yet.",
+        ),
+    ]
+>>>>>>> e5da95650c96dc5c7209bf06c3111e497a563799
