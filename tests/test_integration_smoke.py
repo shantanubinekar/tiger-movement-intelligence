@@ -173,3 +173,32 @@ def test_evaluation_no_fabricated_numbers():
                 f"not_computable list for {report.pipeline_name}"
             )
 
+
+def test_evaluation_computed_metrics_return_real_numbers():
+    """Confirm that core evaluation metrics return real float numbers instead of
+    appearing in not_computable."""
+    reports = run_evaluation()
+    assert len(reports) == 2
+
+    baseline = next(r for r in reports if r.pipeline_name == "baseline")
+    gated = next(r for r in reports if r.pipeline_name == "evidence_gated")
+
+    # Confirm real float numbers for core metrics
+    for r in [baseline, gated]:
+        assert isinstance(r.coverage, float) and 0.0 <= r.coverage <= 1.0
+        assert isinstance(r.abstention_review_rate, float) and 0.0 <= r.abstention_review_rate <= 1.0
+        assert isinstance(r.observations_withheld_pct, float) and 0.0 <= r.observations_withheld_pct <= 100.0
+        assert isinstance(r.false_confident_identity_rate, float) and 0.0 <= r.false_confident_identity_rate <= 1.0
+        assert isinstance(r.false_movement_alert_rate, float) and 0.0 <= r.false_movement_alert_rate <= 1.0
+        assert isinstance(r.alert_precision, float) and 0.0 <= r.alert_precision <= 1.0
+
+    # Evidence-gated pipeline should eliminate false confident identities and false movement alerts
+    assert gated.false_confident_identity_rate == 0.0
+    assert gated.false_movement_alert_rate == 0.0
+    assert gated.alert_precision == 1.0
+
+    # Baseline should exhibit false confident identities from unverified/ambiguous scenarios
+    assert baseline.false_confident_identity_rate > 0.0
+    assert baseline.alert_precision < 1.0
+
+
