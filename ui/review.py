@@ -7,6 +7,7 @@ Maintains a separate 'reviewed by human' badge/log for full traceability in demo
 """
 
 from datetime import datetime, timezone
+from pathlib import Path
 import streamlit as st
 
 from src.pipeline import create_observation, generate_movement_alerts
@@ -137,7 +138,40 @@ def render():
                         s_col4, s_col5, s_col6 = st.columns(3)
                         s_col4.metric("Spatial", f"{c.spatial_feasibility:.3f}")
                         s_col5.metric("Temporal", f"{c.temporal_feasibility:.3f}")
-                        s_col6.metric("History", f"{c.history_consistency:.3f}")
+                        s_col6.metric("Stripe Local", f"{c.local_score:.3f}")
+
+                        # Check if real images exist for visual correspondence rendering
+                        from src.identity import get_default_catalogue
+                        from src.perception import generate_match_visualization
+
+                        cat_img = get_default_catalogue().get_image_path(c.candidate_identity)
+                        query_img = (
+                            d.evidence_summary.get("crop_path")
+                            or d.evidence_summary.get("image_path")
+                        )
+                        if not query_img:
+                            # Try common paths
+                            for p_cand in [
+                                Path(f"data/real_tigers/query/{d.image_id}.jpg"),
+                                Path(f"data/demo/{d.image_id}.jpg"),
+                            ]:
+                                if p_cand.exists():
+                                    query_img = str(p_cand)
+                                    break
+
+                        if query_img and cat_img and Path(query_img).exists() and Path(cat_img).exists():
+                            chk_key = f"chk_match_{d.image_id}_{c.candidate_identity}"
+                            if st.checkbox(f"🔍 Show Stripe Keypoint Match ({c.candidate_identity})", key=chk_key, value=False):
+                                vis = generate_match_visualization(str(query_img), str(cat_img))
+                                if vis is not None:
+                                    st.image(
+                                        vis,
+                                        caption=f"Classical CV stripe feature match: Query ({d.image_id}) ⟷ Catalogue ({c.candidate_identity})",
+                                        use_container_width=True,
+                                    )
+                                else:
+                                    st.caption("Visual keypoint match lines unavailable for this pair.")
+
                         st.markdown("---")
 
             # ------ Interactive Review Controls ------

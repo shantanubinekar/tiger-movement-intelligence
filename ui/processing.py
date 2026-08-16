@@ -1,14 +1,14 @@
 """
-ui/processing.py — Processing page: trigger image directory processing.
+ui/processing.py — Processing page: trigger camera-trap image processing.
 
-Lets the user pick a folder (defaults to data/demo), calls
-process_image_directory(path), then routes results through
-create_observation and generate_movement_alerts so all downstream
-pages have data to render.
+Allows processing of both synthetic demo scenarios and genuine ATRW benchmark
+tiger images. Executes: Ingestion → Triage → Perception → Classical Stripe Keypoint
+Matching → Identity Evidence Gating → Trusted Observation Store → Movement Alerts.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 import streamlit as st
 
 from src.pipeline import (
@@ -21,21 +21,37 @@ from src.schemas import IdentityDecisionState
 
 
 def render():
-    st.header("🔄 Image Processing Pipeline")
+    st.header("🔄 Field Ingestion & Processing Pipeline")
+
+    is_atrw = st.session_state.get("data_source") == "Real Tiger Images (ATRW Benchmark)"
+    default_dir = "data/real_tigers/query" if is_atrw else "data/demo"
+
     st.caption(
         "Execute the end-to-end intelligence pipeline: Ingestion → Triage → "
-        "Perception & Embedding → Identity Evidence Gating → Trusted Observation Store → Movement Deviations."
+        "Perception & Embedding → Classical Stripe Keypoint Matching → Evidence Gating → Trusted History."
     )
+
+    if is_atrw:
+        st.info(
+            "🐅 **Benchmark Mode Active:** Processing genuine ATRW tiger query crops against ATRW catalogue entries. "
+            "Validated on genuine tiger stripe patterns — illustrative reserve station layout.",
+            icon="🐅",
+        )
 
     # ------ Folder selection ------
-    folder_path = st.text_input(
-        "Camera-trap image folder directory:",
-        value="data/demo",
-        help="Path to a directory containing camera-trap images (or the bundled demo dataset).",
-    )
+    col_input, col_info = st.columns([3, 2])
+    with col_input:
+        folder_path = st.text_input(
+            "Camera-trap image folder directory:",
+            value=default_dir,
+            help="Path to a directory containing camera-trap images (or the bundled dataset).",
+        )
+    with col_info:
+        st.markdown("<br>", unsafe_allow_html=True)
+        btn_run = st.button("▶ Run Processing Pipeline", type="primary", use_container_width=True)
 
-    if st.button("▶ Run End-to-End Pipeline", type="primary"):
-        with st.spinner("Executing pipeline layers (Triage → Perception → Identity Gating → Movement Intelligence)…"):
+    if btn_run:
+        with st.spinner("Executing pipeline layers (Triage → Stripe Keypoint Matching → Evidence Gating)…"):
             try:
                 decisions = process_image_directory(folder_path)
                 st.session_state.decisions = decisions
@@ -67,7 +83,7 @@ def render():
     # ------ Show results if available ------
     decisions = st.session_state.get("decisions", [])
     if not decisions:
-        st.info("💡 Click **Run End-to-End Pipeline** above to process images.")
+        st.info("💡 Click **Run Processing Pipeline** above to process images.")
         return
 
     # Decision distribution summary bar

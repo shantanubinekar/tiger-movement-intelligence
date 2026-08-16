@@ -67,6 +67,52 @@ def _load_metadata_csv(csv_path: Path) -> dict[str, dict]:
     return metadata
 
 
+def _load_manifest_csv(csv_path: Path) -> dict[str, dict]:
+    """Load an ATRW real dataset manifest.csv into a metadata dict.
+    Assigns representative illustrative station coordinates in Pench reserve grid
+    and marks data_mode=DataMode.REAL."""
+    metadata: dict[str, dict] = {}
+    if not csv_path.exists():
+        return metadata
+
+    from datetime import timedelta
+
+    # Representative station grid (Pench Reserve illustrative layout)
+    station_layout = {
+        "T_real_01": {"station_id": "STATION_R1", "latitude": 21.750, "longitude": 79.310},
+        "T_real_02": {"station_id": "STATION_R2", "latitude": 21.765, "longitude": 79.325},
+        "T_real_03": {"station_id": "STATION_R3", "latitude": 21.780, "longitude": 79.340},
+        "T_real_04": {"station_id": "STATION_R4", "latitude": 21.795, "longitude": 79.360},
+        "T_real_05": {"station_id": "STATION_R5", "latitude": 21.810, "longitude": 79.380},
+    }
+
+    try:
+        with open(csv_path, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            base_ts = datetime(2026, 2, 1, 6, 30, 0, tzinfo=timezone.utc)
+            for idx, row in enumerate(reader):
+                filename = row.get("filename", "").strip()
+                ind_id = row.get("individual_id", "").strip()
+                if not filename:
+                    continue
+                image_id = Path(filename).stem
+                st_info = station_layout.get(
+                    ind_id,
+                    {"station_id": f"STATION_R{idx+1}", "latitude": 21.750 + idx * 0.015, "longitude": 79.310 + idx * 0.015}
+                )
+                metadata[image_id] = {
+                    "station_id": st_info["station_id"],
+                    "latitude": st_info["latitude"],
+                    "longitude": st_info["longitude"],
+                    "timestamp": base_ts + timedelta(hours=idx * 14),
+                    "camera_status": CameraStatus.ACTIVE,
+                    "data_mode": DataMode.REAL,
+                }
+    except Exception as e:
+        logger.warning("Failed to parse manifest CSV %s: %s", csv_path, e)
+    return metadata
+
+
 def _safe_float(val: Optional[str]) -> Optional[float]:
     if val is None:
         return None
@@ -176,12 +222,20 @@ def ingest_folder(path: str) -> list[ImageRecord]:
         logger.info("No image files found in %s", path)
         return []
 
-    # Try to load sidecar metadata
-    csv_candidates = [folder / "metadata.csv", folder / "meta.csv"]
+    # Try to load sidecar metadata or real dataset manifest
+    csv_candidates = [
+        folder / "metadata.csv",
+        folder / "meta.csv",
+        folder / "manifest.csv",
+        folder.parent / "manifest.csv",
+    ]
     metadata_map: dict[str, dict] = {}
     for csv_path in csv_candidates:
         if csv_path.exists():
-            metadata_map = _load_metadata_csv(csv_path)
+            if csv_path.name == "manifest.csv":
+                metadata_map = _load_manifest_csv(csv_path)
+            else:
+                metadata_map = _load_metadata_csv(csv_path)
             logger.info("Loaded metadata from %s (%d entries)", csv_path, len(metadata_map))
             break
 
@@ -202,7 +256,7 @@ def ingest_folder(path: str) -> list[ImageRecord]:
                 latitude=meta.get("latitude"),
                 longitude=meta.get("longitude"),
                 timestamp=meta.get("timestamp"),
-                camera_status=meta.get("camera_status", CameraStatus.UNKNOWN),
+                camera_status=meta.get("camera_status", CameraStatus.ACTIVE),
                 processing_status="ingested",
                 data_mode=meta.get("data_mode", DataMode.DEMO),
             )

@@ -150,7 +150,7 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
         if norm > 0:
             vec = vec / norm
 
-        # Deterministic local flank embedding
+        # Local embedding from seed + flank
         h_loc = hashlib.sha256(f"{tiger['seed']}_flank".encode()).digest()
         rng_loc = np.random.RandomState(int.from_bytes(h_loc[:4], "big"))
         vec_loc = rng_loc.randn(embedding_dim).astype(np.float64)
@@ -167,6 +167,43 @@ def _build_demo_catalogue(embedding_dim: int = 512) -> CatalogueStore:
             local_embedding=vec_loc.tolist(),
             image_path=tiger.get("image_path"),
         )
+
+    # Automatically load real ATRW benchmark tigers if present
+    import csv
+    from pathlib import Path
+    manifest_path = Path("data/real_tigers/manifest.csv")
+    if manifest_path.exists():
+        try:
+            from src.perception import generate_embedding, generate_local_embedding
+            with open(manifest_path, "r") as f:
+                reader = csv.DictReader(f)
+                station_map = {
+                    "T_real_01": ["STATION_R1", "STATION_R2"],
+                    "T_real_02": ["STATION_R2", "STATION_R3"],
+                    "T_real_03": ["STATION_R3", "STATION_R4"],
+                    "T_real_04": ["STATION_R4", "STATION_R5"],
+                    "T_real_05": ["STATION_R1", "STATION_R5"],
+                }
+                for row in reader:
+                    if row.get("role") == "catalogue":
+                        ind_id = row["individual_id"]
+                        img_rel = row["filename"]
+                        img_path = str(manifest_path.parent / img_rel)
+                        if ind_id not in store and Path(img_path).exists():
+                            emb = generate_embedding(img_path)
+                            loc_emb = generate_local_embedding(img_path)
+                            store.add_identity(
+                                identity_id=ind_id,
+                                embedding=emb,
+                                station_ids=station_map.get(ind_id, ["STATION_R1"]),
+                                last_seen_station=station_map.get(ind_id, ["STATION_R1"])[0],
+                                observation_count=6,
+                                local_embedding=loc_emb,
+                                image_path=img_path,
+                            )
+            logger.info("Loaded real ATRW catalogue identities into CatalogueStore (total: %d)", len(store))
+        except Exception as e:
+            logger.warning("Failed to auto-load real tigers catalogue: %s", e)
 
     return store
 

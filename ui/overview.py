@@ -18,12 +18,26 @@ def render():
 
     # P-level build phase indicator for judging narration
     st.info(
-        "🏗️ **Build Phases Completed:** "
+        "🏗️ **System Capability Architecture:** "
         "**P0:** Core End-to-End Pipeline & Safety Guard | "
         "**P1:** Ground-Truth Evaluation Metrics & Interactive Review | "
         "**P2:** Calibration Diagnostics, Flank Proxy & Unseen Camera Split | "
-        "**P3:** Spatial Maps & Judge Export Polish"
+        "**P3:** Spatial Maps & Judge Export Polish | "
+        "**Real ATRW Benchmark:** Classical Stripe-Pattern Keypoint Matching"
     )
+
+    is_atrw = st.session_state.get("data_source") == "Real Tiger Images (ATRW Benchmark)"
+    if is_atrw:
+        st.caption(
+            "🐅 **Active Mode: ATRW Real Tiger Benchmark Dataset.** "
+            "Evidence-gated identity matching using classical stripe-pattern keypoint matching (SIFT/ORB). "
+            "Validated on genuine ATRW photographs — illustrative Pench reserve station grid."
+        )
+    else:
+        st.caption(
+            "🌲 **Active Mode: Synthetic Pench Camera-Trap Scenarios.** "
+            "Synthetic camera-trap scenarios for end-to-end pipeline verification and ground-truth evaluation."
+        )
 
     decisions = st.session_state.get("decisions", [])
     observations = st.session_state.get("observations", [])

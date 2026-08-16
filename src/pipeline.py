@@ -145,6 +145,9 @@ def process_image_directory(path: str) -> list[IdentityDecision]:
                         "quality_score": detection.quality_score,
                         "flank_visibility": detection.flank_visibility,
                         "camera_status": record.camera_status,
+                        "crop_path": crop_path,
+                        "image_path": record.image_path,
+                        "data_mode": record.data_mode.value if hasattr(record.data_mode, "value") else str(record.data_mode),
                     }
                     candidates = _real_generate_candidates(
                         embedding=embedding,
