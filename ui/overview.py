@@ -1,132 +1,131 @@
 """
-ui/overview.py — Overview page: system-wide counts and status.
-
-Shows counts of: images processed, blank, nonblank, uncertain,
-trusted, ambiguous, unknown, insufficient_evidence, alerts,
-suppressed alerts, and P-level build phase indicators for judging.
+ui/overview.py — Dashboard page with system-wide operational metrics.
 """
 
 from __future__ import annotations
 
 import streamlit as st
-
 from src.schemas import AlertStatus, IdentityDecisionState
 
 
 def render():
-    st.header("📊 System Overview & Operational Intelligence")
-
-    # P-level build phase indicator for judging narration
-    st.info(
-        "🏗️ **System Capability Architecture:** "
-        "**P0:** Core End-to-End Pipeline & Safety Guard | "
-        "**P1:** Ground-Truth Evaluation Metrics & Interactive Review | "
-        "**P2:** Calibration Diagnostics, Flank Proxy & Unseen Camera Split | "
-        "**P3:** Spatial Maps & Judge Export Polish | "
-        "**Real ATRW Benchmark:** Classical Stripe-Pattern Keypoint Matching"
-    )
-
     is_atrw = st.session_state.get("data_source") == "Real Tiger Images (ATRW Benchmark)"
-    if is_atrw:
-        st.caption(
-            "🐅 **Active Mode: ATRW Real Tiger Benchmark Dataset.** "
-            "Evidence-gated identity matching using classical stripe-pattern keypoint matching (SIFT/ORB). "
-            "Validated on genuine ATRW photographs — illustrative Pench reserve station grid."
-        )
-    else:
-        st.caption(
-            "🌲 **Active Mode: Synthetic Pench Camera-Trap Scenarios.** "
-            "Synthetic camera-trap scenarios for end-to-end pipeline verification and ground-truth evaluation."
-        )
 
     decisions = st.session_state.get("decisions", [])
     observations = st.session_state.get("observations", [])
     alerts = st.session_state.get("alerts", [])
 
+    # ── Welcome State ──────────────────────────────────────────
     if not decisions:
-        st.info(
-            "👋 **Welcome to the Tiger Movement Intelligence System.** "
-            "No images have been processed yet in the current session. "
-            "Navigate to the **Processing** page and click **Process Image Directory** to run the complete pipeline."
-        )
+        st.markdown("### Welcome to the Movement Intelligence Portal")
+
+        if is_atrw:
+            st.info(
+                "🐅 **ATRW Benchmark Mode** — Select '⚙️ Processing' from the sidebar to run the pipeline "
+                "on genuine tiger images, or switch the data source above.",
+            )
+        else:
+            st.info(
+                "🌲 **Synthetic Demo Mode** — Select '⚙️ Processing' from the sidebar to run the "
+                "end-to-end pipeline on bundled demo scenarios.",
+            )
 
         st.markdown("---")
-        st.subheader("System Architecture & Processing Flow")
-        st.markdown(
-            """
-            1. **Ingestion & Metadata Validation**: Parses EXIF metadata, timestamp, camera station ID, and GPS coordinates.
-            2. **Visual Triage & Detection**: Filters blank / non-tiger images and crops tiger detections.
-            3. **Perception & Embedding**: Extracts global and local stripe features with image SNR quality scoring.
-            4. **Candidate Generation & Spatial-Temporal Matching**: Evaluates physical feasibility and historical consistency.
-            5. **Evidence-Gated Decision**: Strict multi-evidence gating admitting **only** high-evidence captures into trusted history.
-            6. **Ecological Deviation Detection & Artefact Suppression**: Identifies new stations and dispersals while filtering camera relocations.
-            """
-        )
+        st.markdown("##### System Architecture")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown(
+                """
+                **Ingestion Pipeline**
+                1. EXIF metadata extraction & validation
+                2. Visual triage — blank / non-tiger filtering
+                3. Classical stripe keypoint feature extraction (SIFT/ORB)
+
+                **Identity Matching**
+                4. Candidate generation via embedding similarity
+                5. Spatial-temporal feasibility scoring
+                6. Multi-evidence gating (E = Σ Wᵢ · Fᵢ)
+                """
+            )
+        with col_b:
+            st.markdown(
+                """
+                **Ecological Intelligence**
+                7. Trusted observation store (only `trusted_match`)
+                8. Historical capture area computation (convex hull)
+                9. Movement deviation detection & alert generation
+                10. Artefact suppression (camera relocation, survey gaps)
+
+                **Review & Audit**
+                11. Human-in-the-loop verification queue
+                12. Quantitative evaluation against independent ground truth
+                """
+            )
         return
 
-    # ------ Decision counts ------
+    # ── Operational Metrics ────────────────────────────────────
     total = len(decisions)
     counts = {}
     for state in IdentityDecisionState:
-        counts[state.value] = sum(
-            1 for d in decisions if d.decision == state
-        )
+        counts[state.value] = sum(1 for d in decisions if d.decision == state)
 
-    st.subheader("1. Ingestion & Identity Decision Distribution")
-    cols = st.columns(4)
-    cols[0].metric("Total Processed", total)
-    cols[1].metric("Trusted Match ✅", counts.get("trusted_match", 0), help="Admitted into trusted history")
-    cols[2].metric("Ambiguous (Review) 🟡", counts.get("ambiguous_review", 0), help="Requires human confirmation")
-    cols[3].metric("Unknown 🟠", counts.get("unknown", 0), help="Low similarity or candidate margin")
+    mode_label = "ATRW Benchmark" if is_atrw else "Synthetic Demo"
+    st.caption(f"Active data source: **{mode_label}** · {total} images processed")
 
-    cols2 = st.columns(4)
-    cols2[0].metric("Insufficient Evidence ⚪", counts.get("insufficient_evidence", 0), help="Poor image quality or missing EXIF")
-    cols2[1].metric("Non-Tiger 🦌", counts.get("non_tiger", 0))
-    cols2[2].metric("Blank Frame 🌿", counts.get("blank", 0))
-    cols2[3].metric("Rejected 🚫", counts.get("rejected", 0))
+    # Row 1: Primary counts
+    st.markdown("##### Identity Decision Distribution")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Processed", total)
+    c2.metric("Trusted Match", counts.get("trusted_match", 0))
+    c3.metric("Pending Review", counts.get("ambiguous_review", 0))
+    c4.metric("Unknown", counts.get("unknown", 0))
 
-    # ------ Observation & Alert counts ------
+    # Row 2: Secondary counts
+    c5, c6, c7, c8 = st.columns(4)
+    c5.metric("Insufficient Evidence", counts.get("insufficient_evidence", 0))
+    c6.metric("Non-Tiger", counts.get("non_tiger", 0))
+    c7.metric("Blank Frame", counts.get("blank", 0))
+    c8.metric("Rejected", counts.get("rejected", 0))
+
     st.markdown("---")
+
+    # Row 3: Observation & Alert summary
     col_obs, col_alt = st.columns(2)
 
     with col_obs:
-        st.subheader("2. Trusted Observation History")
+        st.markdown("##### Trusted Observation Store")
         st.metric(
-            "Trusted Observations Created",
+            "Observations Created",
             len(observations),
-            delta=f"{len(observations)}/{total} admitted",
+            delta=f"{len(observations)} of {total} admitted",
             delta_color="normal",
         )
-        withheld_count = total - len(observations)
-        st.caption(
-            f"🛡️ **Safety Layer Active:** {withheld_count} captures ({withheld_count/total*100:.1f}%) "
-            f"were withheld from trusted history to protect ecological integrity."
-        )
+        withheld = total - len(observations)
+        if total > 0:
+            st.caption(
+                f"🛡️ {withheld} capture(s) ({withheld/total*100:.0f}%) withheld by evidence gating."
+            )
 
     with col_alt:
-        st.subheader("3. Movement Alerts & Suppression")
-        total_alerts = len(alerts)
-        active_alerts = sum(1 for a in alerts if a.status == AlertStatus.ACTIVE)
-        suppressed_alerts = sum(1 for a in alerts if a.status == AlertStatus.SUPPRESSED)
-        review_alerts = sum(
+        st.markdown("##### Movement Alert Summary")
+        active_n = sum(1 for a in alerts if a.status == AlertStatus.ACTIVE)
+        suppressed_n = sum(1 for a in alerts if a.status == AlertStatus.SUPPRESSED)
+        review_n = sum(
             1 for a in alerts if a.status in (AlertStatus.HUMAN_REVIEW_REQUIRED, AlertStatus.INSUFFICIENT_EVIDENCE)
         )
-
         st.metric(
-            "Active Biological Alerts 🟢",
-            active_alerts,
-            delta=f"{suppressed_alerts} artefacts suppressed",
+            "Active Alerts",
+            active_n,
+            delta=f"{suppressed_n} artefacts suppressed",
             delta_color="inverse",
         )
         st.caption(
-            f"🚨 Total Alert Candidates: **{total_alerts}** | "
-            f"Suppressed Artefacts: **{suppressed_alerts}** | "
-            f"Under Review: **{review_alerts}**"
+            f"Total candidates: {len(alerts)} · Suppressed: {suppressed_n} · Under review: {review_n}"
         )
 
-    # ------ Human Review Audit Summary ------
+    # Human Review Audit
     human_reviews = st.session_state.get("human_reviews", {})
     if human_reviews:
         st.markdown("---")
-        st.subheader("4. Human Review Audit Log")
-        st.caption(f"🧑‍🔬 **{len(human_reviews)}** manual decision overrides logged during this session.")
+        st.markdown("##### Human Review Audit Trail")
+        st.caption(f"{len(human_reviews)} manual decision override(s) logged this session.")

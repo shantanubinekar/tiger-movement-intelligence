@@ -1,8 +1,8 @@
 """
-app.py — Streamlit entrypoint for the Evidence-Aware Tiger Camera-Trap
-Movement Intelligence & Ecological Security Portal (Pench Tiger Reserve).
+app.py — Streamlit entrypoint for the Pench Tiger Reserve
+Evidence-Gated Movement Intelligence Portal.
 
-Government-portal design theme for Smart India Hackathon prototype.
+Government-portal-grade UI with clean formal styling.
 """
 
 from __future__ import annotations
@@ -20,120 +20,275 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Government Portal Custom Theme CSS
+# Comprehensive Government Portal CSS
+# ---------------------------------------------------------------------------
+PORTAL_CSS = """
+<style>
+/* ── Base Reset ────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif:wght@700&display=swap');
+
+html, body, [data-testid="stAppViewContainer"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* ── Top Institutional Banner ──────────────────────────────── */
+.portal-banner {
+    background: linear-gradient(135deg, #0c1f36 0%, #162d4a 60%, #1e3a5f 100%);
+    padding: 20px 28px 18px;
+    border-radius: 0 0 10px 10px;
+    margin: -1rem -1rem 24px -1rem;
+    border-bottom: 4px solid #d97706;
+    position: relative;
+    overflow: hidden;
+}
+.portal-banner::before {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 200px; height: 100%;
+    background: linear-gradient(135deg, transparent 40%, rgba(217,119,6,0.15) 100%);
+    pointer-events: none;
+}
+.portal-banner h1 {
+    color: #ffffff !important;
+    font-family: 'Noto Serif', Georgia, serif;
+    font-size: 1.55rem;
+    margin: 0 0 4px 0;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    line-height: 1.3;
+}
+.portal-banner .subtitle {
+    color: #cbd5e1;
+    font-size: 0.82rem;
+    margin: 0;
+    font-weight: 400;
+    letter-spacing: 0.2px;
+}
+.portal-banner .accent {
+    color: #fbbf24;
+    font-weight: 600;
+}
+
+/* ── Section Cards ─────────────────────────────────────────── */
+.section-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.section-card-accent {
+    border-left: 4px solid #d97706;
+}
+
+/* ── Metric Cards ──────────────────────────────────────────── */
+.stMetric {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: box-shadow 0.2s ease;
+}
+.stMetric:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.stMetric label {
+    color: #64748b !important;
+    font-size: 0.78rem !important;
+    font-weight: 500 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+.stMetric [data-testid="stMetricValue"] {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    font-size: 1.5rem !important;
+}
+.stMetric [data-testid="stMetricDelta"] {
+    opacity: 1 !important;
+    font-size: 0.75rem !important;
+}
+
+/* ── Expanders ─────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+[data-testid="stExpander"] summary {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.stButton > button[kind="primary"] {
+    background-color: #b45309;
+    border: none;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+.stButton > button[kind="primary"]:hover {
+    background-color: #92400e;
+}
+
+/* ── Dataframes ────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background-color: #f8fafc;
+    border-right: 1px solid #e2e8f0;
+}
+[data-testid="stSidebar"] .stRadio label {
+    font-weight: 500;
+    color: #334155;
+}
+.sidebar-brand {
+    text-align: center;
+    padding: 8px 0 16px 0;
+    border-bottom: 2px solid #e2e8f0;
+    margin-bottom: 16px;
+}
+.sidebar-brand .icon {
+    font-size: 2.2rem;
+    line-height: 1;
+}
+.sidebar-brand .title {
+    font-family: 'Noto Serif', Georgia, serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f2942;
+    margin: 6px 0 2px 0;
+    line-height: 1.2;
+}
+.sidebar-brand .sub {
+    font-size: 0.72rem;
+    color: #64748b;
+    letter-spacing: 0.3px;
+}
+.sidebar-notice {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 0.75rem;
+    color: #78350f;
+    line-height: 1.5;
+    margin-top: 12px;
+}
+
+/* ── Portal Footer ─────────────────────────────────────────── */
+.portal-footer {
+    margin-top: 48px;
+    padding: 16px 24px;
+    background: #f8fafc;
+    border-top: 3px solid #d97706;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 0.78rem;
+    color: #64748b;
+    line-height: 1.6;
+}
+.portal-footer strong { color: #334155; }
+.portal-footer .formula { color: #94a3b8; font-style: italic; }
+
+/* ── Status Badges ─────────────────────────────────────────── */
+.status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+.badge-trusted { background: #dcfce7; color: #166534; }
+.badge-ambiguous { background: #fef3c7; color: #92400e; }
+.badge-unknown { background: #ffedd5; color: #9a3412; }
+.badge-rejected { background: #fee2e2; color: #991b1b; }
+
+/* ── Info/Warning/Success Box Refinements ──────────────────── */
+[data-testid="stAlert"] {
+    border-radius: 8px;
+    font-size: 0.88rem;
+}
+
+/* ── Image captions ────────────────────────────────────────── */
+[data-testid="stImage"] + div {
+    font-size: 0.8rem;
+    color: #64748b;
+}
+</style>
+"""
+
+st.markdown(PORTAL_CSS, unsafe_allow_html=True)
+
+# ---------------------------------------------------------------------------
+# Institutional Banner
 # ---------------------------------------------------------------------------
 st.markdown(
     """
-    <style>
-    /* Government portal color variables and container styling */
-    :root {
-        --gov-navy: #0f2942;
-        --gov-saffron: #d97706;
-        --gov-saffron-light: #fef3c7;
-        --gov-green: #047857;
-        --gov-border: #cbd5e1;
-    }
-
-    .gov-header-bar {
-        background: linear-gradient(90deg, #0f2942 0%, #1e3a5f 70%, #d97706 100%);
-        color: white;
-        padding: 16px 24px;
-        border-radius: 6px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-    }
-    .gov-header-bar h1 {
-        color: white !important;
-        font-family: Georgia, 'Times New Roman', serif;
-        font-size: 1.6rem;
-        margin: 0;
-        font-weight: 700;
-        letter-spacing: 0.5px;
-    }
-    .gov-header-bar p {
-        color: #f1f5f9;
-        font-size: 0.85rem;
-        margin: 4px 0 0 0;
-    }
-
-    .gov-footer {
-        margin-top: 50px;
-        padding: 18px 24px;
-        background-color: #f8fafc;
-        border-top: 3px solid #d97706;
-        border-radius: 4px;
-        text-align: center;
-        color: #475569;
-        font-size: 0.82rem;
-    }
-
-    .stMetric {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-        padding: 12px 16px;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-    }
-    .stMetric label { color: #475569 !important; }
-    .stMetric [data-testid="stMetricValue"] { color: #0f2942 !important; }
-    .stMetric [data-testid="stMetricDelta"] { opacity: 1 !important; }
-
-    .sidebar-badge {
-        background-color: #f1f5f9;
-        border-left: 3px solid #0f2942;
-        padding: 8px 12px;
-        border-radius: 4px;
-        font-size: 0.8rem;
-        color: #334155;
-        margin-top: 10px;
-    }
-    </style>
-    <div class="gov-header-bar">
-        <h1>🐯 Pench Tiger Reserve — Movement Intelligence & Ecological Security Portal</h1>
-        <p>Evidence-gated identity matching using classical stripe-pattern keypoint matching & spatial-temporal gating</p>
+    <div class="portal-banner">
+        <h1>🐯 Pench Tiger Reserve — Movement Intelligence Portal</h1>
+        <p class="subtitle">
+            <span class="accent">Evidence-Gated Identity Matching</span> ·
+            Classical Stripe-Pattern Keypoint Analysis (SIFT/ORB) · Spatial-Temporal Gating ·
+            Ecological Deviation Detection
+        </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 # ---------------------------------------------------------------------------
-# Session state defaults — shared across pages
+# Session state defaults
 # ---------------------------------------------------------------------------
-if "decisions" not in st.session_state:
-    st.session_state.decisions = []
-if "observations" not in st.session_state:
-    st.session_state.observations = []
-if "alerts" not in st.session_state:
-    st.session_state.alerts = []
-if "eval_reports" not in st.session_state:
-    st.session_state.eval_reports = []
-if "human_reviews" not in st.session_state:
-    st.session_state.human_reviews = {}
-if "processed" not in st.session_state:
-    st.session_state.processed = False
-if "data_source" not in st.session_state:
-    st.session_state.data_source = "Synthetic Demo Scenarios (Pench Layout)"
+for key, default in {
+    "decisions": [],
+    "observations": [],
+    "alerts": [],
+    "eval_reports": [],
+    "human_reviews": {},
+    "processed": False,
+    "data_source": "Synthetic Demo Scenarios (Pench Layout)",
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # ---------------------------------------------------------------------------
-# Sidebar navigation & Data Source Controls
+# Sidebar
 # ---------------------------------------------------------------------------
-st.sidebar.markdown("### 🏛️ Ministry & Reserve Portal")
-st.sidebar.caption("Pench Tiger Reserve (MP / Maharashtra)")
+st.sidebar.markdown(
+    """
+    <div class="sidebar-brand">
+        <div class="icon">🐯</div>
+        <div class="title">Pench Tiger Reserve</div>
+        <div class="sub">MP / Maharashtra · Movement Intelligence Portal</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # Data source selector
 data_source = st.sidebar.selectbox(
-    "Active Data Source:",
+    "📂 Active Data Source",
     [
         "Synthetic Demo Scenarios (Pench Layout)",
         "Real Tiger Images (ATRW Benchmark)",
     ],
     index=0 if st.session_state.data_source == "Synthetic Demo Scenarios (Pench Layout)" else 1,
-    help="Select between synthetic camera-trap scenarios or genuine ATRW benchmark tiger photos.",
+    help="Toggle between synthetic camera-trap scenarios or genuine ATRW benchmark tiger images.",
 )
 
 if data_source != st.session_state.data_source:
     st.session_state.data_source = data_source
-    # Reset processed state on switch
     st.session_state.processed = False
     st.session_state.decisions = []
     st.session_state.observations = []
@@ -141,7 +296,7 @@ if data_source != st.session_state.data_source:
     st.session_state.eval_reports = []
     st.session_state._auto_process_pending = True
 
-# Auto-process on data source switch (runs once after the rerun triggered by selectbox change)
+# Auto-process on data source switch
 if st.session_state.get("_auto_process_pending", False) and not st.session_state.processed:
     from src.pipeline import (
         create_observation,
@@ -161,7 +316,7 @@ if st.session_state.get("_auto_process_pending", False) and not st.session_state
         else "synthetic demo scenarios"
     )
 
-    with st.spinner(f"Loading {source_label} from `{folder}`…"):
+    with st.spinner(f"Loading {source_label}…"):
         try:
             decisions = process_image_directory(folder)
             st.session_state.decisions = decisions
@@ -179,76 +334,74 @@ if st.session_state.get("_auto_process_pending", False) and not st.session_state
 st.sidebar.markdown("---")
 
 PAGES = {
-    "Overview": "overview",
-    "Processing": "processing",
-    "Review Queue": "review",
-    "Movement / Catalogue": "movement",
-    "Alerts": "alerts",
-    "Evaluation": "evaluation",
+    "📊 Dashboard": "overview",
+    "⚙️ Processing": "processing",
+    "🔍 Review Queue": "review",
+    "🗺️ Movement & Catalogue": "movement",
+    "🚨 Alerts": "alerts",
+    "📈 Evaluation": "evaluation",
 }
 
 selected = st.sidebar.radio("Navigation", list(PAGES.keys()), index=0)
 
-st.sidebar.markdown("---")
 st.sidebar.markdown(
     """
-    <div class="sidebar-badge">
-        <b>System Integrity Notice</b><br>
-        Identity matching via classical stripe keypoints (SIFT/ORB) with strict evidence gating.
-        Safety invariant: only <code>trusted_match</code> updates longitudinal history.
+    <div class="sidebar-notice">
+        <strong>⚖️ Safety Invariant</strong><br>
+        Only <code>trusted_match</code> decisions with sufficient multi-factor
+        evidence update longitudinal history. All other states are withheld.
     </div>
     """,
     unsafe_allow_html=True,
 )
 
 # ---------------------------------------------------------------------------
-# Dynamic Banner based on Data Mode
+# Data Mode Banner
 # ---------------------------------------------------------------------------
 if st.session_state.data_source == "Real Tiger Images (ATRW Benchmark)":
     st.info(
-        "🐅 **REAL DATASET BENCHMARK ACTIVE** — Running on ATRW (Amur Tiger Re-ID Benchmark) image data with illustrative Pench reserve station grid. "
-        "**Note:** Validated on genuine tiger photographs — not Pench-specific field observations.",
+        "🐅 **Real Dataset Active** — Processing ATRW (Amur Tiger Re-ID Benchmark) images. "
+        "Validated on genuine tiger photographs with illustrative Pench station grid — not field observations.",
         icon="🐅",
     )
-else:
+elif not st.session_state.processed:
     st.warning(
-        "⚠️ **DEMO MODE** — All results shown are synthetic/prototype camera-trap data. "
-        "They must **never** be presented as unverified field observations.",
+        "⚠️ **Demo Mode** — Synthetic prototype data. "
+        "Results must never be presented as field observations.",
         icon="⚠️",
     )
 
 # ---------------------------------------------------------------------------
-# Route to the selected page
+# Page Routing
 # ---------------------------------------------------------------------------
-if selected == "Overview":
+if selected == "📊 Dashboard":
     from ui.overview import render
     render()
-elif selected == "Processing":
+elif selected == "⚙️ Processing":
     from ui.processing import render
     render()
-elif selected == "Review Queue":
+elif selected == "🔍 Review Queue":
     from ui.review import render
     render()
-elif selected == "Movement / Catalogue":
+elif selected == "🗺️ Movement & Catalogue":
     from ui.movement import render
     render()
-elif selected == "Alerts":
+elif selected == "🚨 Alerts":
     from ui.alerts import render
     render()
-elif selected == "Evaluation":
+elif selected == "📈 Evaluation":
     from ui.evaluation import render
     render()
 
 # ---------------------------------------------------------------------------
-# Universal Government Portal Footer
+# Footer
 # ---------------------------------------------------------------------------
 st.markdown(
     """
-    <div class="gov-footer">
-        🏛️ <b>Prototype — Evidence-Gated Identity & Movement Intelligence System</b><br>
-        Developed for Smart India Hackathon | Not an official government release |
-        Evidence formula: <i>E = W<sub>V</sub>·V<sub>eff</sub> + W<sub>Q</sub>·Q + W<sub>S</sub>·S + W<sub>T</sub>·T + W<sub>H</sub>·H</i> |
-        Scientific proof of concept
+    <div class="portal-footer">
+        <strong>Prototype — Evidence-Gated Identity & Movement Intelligence</strong><br>
+        Developed for Smart India Hackathon · Not an official government system ·
+        <span class="formula">E = W<sub>V</sub>·V + W<sub>Q</sub>·Q + W<sub>S</sub>·S + W<sub>T</sub>·T + W<sub>H</sub>·H</span>
     </div>
     """,
     unsafe_allow_html=True,
